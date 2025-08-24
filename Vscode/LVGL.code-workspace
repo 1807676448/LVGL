@@ -1,0 +1,23 @@
+{
+    "folders": [
+        {
+            "path": "."
+        },
+        {
+            "path": ".."
+        }
+    ],
+    "settings": {
+        "files.associations": {
+            "lv_conf_kconfig.h": "c",
+            "lvgl_private.h": "c",
+            "lvgl.h": "c",
+            "spi.h": "c",
+            "lcd.h": "c",
+            "chrono": "c",
+            "system_error": "c",
+            "xlocale": "c"
+        }
+    },
+    "extensions": {}
+}
