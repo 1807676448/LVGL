@@ -220,6 +220,8 @@ int main(void)
     /* USER CODE BEGIN 3 */
     lv_timer_handler();
     HAL_Delay(5);
+
+    My_Usart_Send("Finish!");
   }
   /* USER CODE END 3 */
 }
