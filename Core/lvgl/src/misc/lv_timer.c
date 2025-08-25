@@ -13,6 +13,7 @@
 #include "lv_assert.h"
 #include "lv_ll.h"
 #include "lv_profiler.h"
+#include "My_Debug.h"
 
 /*********************
  *      DEFINES
