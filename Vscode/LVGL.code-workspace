@@ -25,7 +25,9 @@
             "regex": "c",
             "sstream": "c",
             "usart.h": "c",
-            "main.h": "c"
+            "main.h": "c",
+            "my_lvgl.h": "c",
+            "stm32h7xx_hal.h": "c"
         },
         "cortex-debug.variableUseNaturalFormat": true
     },

@@ -64,6 +64,9 @@
                   },
                   {
                     "path": "../Core/Src/memorymap.c"
+                  },
+                  {
+                    "path": "../Core/Src/My_LVGL.c"
                   }
                 ],
                 "folders": []
