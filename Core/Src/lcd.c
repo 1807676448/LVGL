@@ -8,10 +8,7 @@ volatile uint8_t spi_dma_tx_complete = 1;
 
 // 为DMA传输定义一个大的静态缓冲区，以减少DMA启动次数
 // 大小应为3的倍数(适配ILI9488的18-bit模式)，且小于65535
-uint8_t dma_buffer[LCD_DMA_BUFFER_SIZE];
-
-// // 定义DMA单次传输超时时间
-// #define SPI_DMA_TIMEOUT_MS 100
+uint8_t dma_buffer[OneStepSize*OnePointSize_DMA];
 
 // 管理LCD重要参数
 // 默认为竖屏
@@ -146,43 +143,54 @@ void LCD_DrawPoint_Color(uint16_t x, uint16_t y, uint16_t color)
 
 void LCD_Clear(uint16_t Color)
 {
-    unsigned int i, m;
-    if (!spi_dma_tx_complete) // 如果上次DMA还没完成，等待
-    {
-        while (!spi_dma_tx_complete)
-        {
-        };
-    }
-    /* 逐点填充颜色 */
-    // for (i = 0; i < lcddev.height; i++)
-    // {
-    //     for (m = 0; m < lcddev.width; m++)
-    //     {
-    //         Lcd_WriteData_16Bit(Color);
-    //     }
-    // }
-    /* 使用DMA分块填充颜色 */
-    // DMA需要TX,RX一起开启
+    int32_t w = 320;
+    int32_t h = 480;
+    int32_t total_pixels_to_flush = w * h * 3;
 
-    for (int i = 0; i < LCD_DMA_BUFFER_SIZE / 3; i++)
+    // 2. 设置LCD硬件的刷新窗口
+    LCD_SetWindows(0, 0, w - 1, h - 1);
+
+    // 3. 准备�?始传�?
+
+    // 4. 分块进行传
+    while (total_pixels_to_flush > 0)
     {
-        dma_buffer[i * 3 + 0] = (Color >> 8) & 0xF8; // RED
-        dma_buffer[i * 3 + 1] = (Color >> 3) & 0xFC; // GREEN
-        dma_buffer[i * 3 + 2] = Color << 3;          // BLUE
-    }
-    for (int i = 0; i < 8; i++)
-    {
-        LCD_SetWindows(0, LCD_H / 8 * i, lcddev.width - 1, lcddev.height - 1);
+        // 计算当前块能传输多少像素
+        int32_t chunk_pixel_count = total_pixels_to_flush;
+        if (chunk_pixel_count > OneStepSize*OnePointSize_DMA)
+        {
+            chunk_pixel_count = OneStepSize*OnePointSize_DMA;
+        }
+
+        // **核心：进行颜色格式转�? (�? RGB565 -> RGB666)**
+        for (int32_t i = 0; i < chunk_pixel_count / 3; i++)
+        {
+            uint16_t color16 = Color;
+            
+            dma_buffer[i * 3 + 0] = (color16 >> 8) & 0xF8; // R
+            dma_buffer[i * 3 + 1] = (color16 >> 3) & 0xFC; // G
+            dma_buffer[i * 3 + 2] = (color16 << 3);        // B
+        }
+
+        // 等待上一次DMA传输完成
+        while (!spi_dma_tx_complete)
+            ;
+
+        // 清除标志位，准备�?始新的DMA传输
+        spi_dma_tx_complete = 0;
+
         LCD_CS_CLR;
         LCD_RS_SET;
-        spi_dma_tx_complete = 0;
-        HAL_SPI_Transmit_DMA(&hspi1, dma_buffer, LCD_DMA_BUFFER_SIZE);
-        while (!spi_dma_tx_complete)
-        {
-        };
-    }
-}
 
+        // 启动DMA传输
+        HAL_SPI_Transmit_DMA(&hspi1, dma_buffer, chunk_pixel_count);
+
+        // 更新剩余像素计数和颜色指�?
+        total_pixels_to_flush -= chunk_pixel_count;
+    }
+    while (!spi_dma_tx_complete)
+        ;
+}
 /*****************************************************************************
  * @name       :void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
  * @date       :2025-08-17
@@ -190,15 +198,15 @@ void LCD_Clear(uint16_t Color)
  * @parameters :hspi: SPI句柄指针
  * @retvalue   :无
  ******************************************************************************/
-void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-    if (hspi->Instance == SPI1)
-    {
-        LCD_CS_SET;
-        // PG_TOGGLE(7); // 等待完成时可以做点别的事，比如切换LED状态
-        spi_dma_tx_complete = 1;
-    }
-}
+// void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+// {
+//     if (hspi->Instance == SPI1)
+//     {
+//         LCD_CS_SET;
+//         // PG_TOGGLE(7); // 等待完成时可以做点别的事，比如切换LED状态
+//         spi_dma_tx_complete = 1;
+//     }
+// }
 
 /*****************************************************************************
  * @name       :void LCD_RESET(void)

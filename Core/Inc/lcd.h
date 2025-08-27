@@ -10,6 +10,8 @@
 #include "dma.h"
 #include <stdint.h>
 
+#define AXI_SRAM_VAR __attribute__((section(".axi_sram")))
+
 //========================================= 电源接线 ============================================//
 //  LCD模块引脚   |   连接到STM32引脚   |   说明
 //---------------|----------------------|------------------------------------------------
@@ -69,8 +71,8 @@ extern _lcd_dev lcddev; // 全局LCD参数
 
 // LCD参数
 #define USE_HORIZONTAL 0 // 屏幕旋转方向（0=竖屏，1=横屏，2=180度，3=270度）
-#define LCD_W 320       // 屏幕物理宽度
-#define LCD_H 480       // 屏幕物理高度
+#define LCD_W 320        // 屏幕物理宽度
+#define LCD_H 480        // 屏幕物理高度
 
 // TFTLCD部分外要调用的函数
 extern uint16_t POINT_COLOR; // 当前画笔颜色
@@ -90,12 +92,12 @@ extern uint16_t BACK_COLOR;  // 背景颜色
 #define LCD_RS HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET)
 #define LCD_RST HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET)
 
-#define LCD_CS_SET HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET)   // 片选端口
-#define LCD_RS_SET HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET)   // 数据/命令
+#define LCD_CS_SET HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET)  // 片选端口
+#define LCD_RS_SET HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET)  // 数据/命令
 #define LCD_RST_SET HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET) // 复位
 
-#define LCD_CS_CLR HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET)   // 片选端口
-#define LCD_RS_CLR HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET)   // 数据/命令
+#define LCD_CS_CLR HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET)  // 片选端口
+#define LCD_RS_CLR HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET)  // 数据/命令
 #define LCD_RST_CLR HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET) // 复位
 
 // 常用颜色宏（RGB565）
@@ -130,16 +132,16 @@ extern uint16_t BACK_COLOR;  // 背景颜色
 /**
  * @brief LCD基本操作函数声明
  */
-void LCD_Init(void);                         // 初始化LCD
-void LCD_DisplayOn(void);                    // 打开显示
-void LCD_DisplayOff(void);                   // 关闭显示
-void LCD_Clear(uint16_t Color);              // 全屏填充
+void LCD_Init(void);                              // 初始化LCD
+void LCD_DisplayOn(void);                         // 打开显示
+void LCD_DisplayOff(void);                        // 关闭显示
+void LCD_Clear(uint16_t Color);                   // 全屏填充
 void LCD_SetCursor(uint16_t Xpos, uint16_t Ypos); // 设置光标
-void LCD_DrawPoint(uint16_t x, uint16_t y);        // 画点
+void LCD_DrawPoint(uint16_t x, uint16_t y);       // 画点
 void LCD_DrawPoint_Color(uint16_t x, uint16_t y, uint16_t color);
-uint16_t LCD_ReadPoint(uint16_t x, uint16_t y);   // 读点
-void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2); // 画线
-void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2); // 画矩形
+uint16_t LCD_ReadPoint(uint16_t x, uint16_t y);                                    // 读点
+void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);             // 画线
+void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);        // 画矩形
 void LCD_SetWindows(uint16_t xStar, uint16_t yStar, uint16_t xEnd, uint16_t yEnd); // 设置窗口
 
 uint16_t LCD_RD_DATA(void); // 读取LCD数据
@@ -155,11 +157,18 @@ void Lcd_WriteData_16Bit(uint16_t Data);
 void LCD_direction(uint8_t direction);
 
 #define LCD_DMA_BUFFER_SIZE (LCD_W * LCD_H * 3 / 8) // 使用一个较小的值以避免RAM溢出
-#define BYTES_PER_PIXEL 2  // RGB565格式为2字节
+#define BYTES_PER_PIXEL 2                           // RGB565格式为2字节
 #define PIXELS_PER_DMA_BUFFER (LCD_DMA_BUFFER_SIZE / BYTES_PER_PIXEL)
 
 extern volatile uint8_t spi_dma_tx_complete;
-extern uint8_t dma_buffer[LCD_DMA_BUFFER_SIZE];
 
+
+
+
+#define DMA_BUFFER_PIXEL_COUNT (LCD_W * LCD_H * 3 / 8)
+#define OneStepSize (LCD_W * LCD_H / 10) // lvgl单次刷新像素点数
+#define OnePointSize_Lvgl 2              // legl单个像素点占用uint8_t数目
+#define OnePointSize_DMA 3               //  单个像素点DMA需要传输3个uint8_t数据
+extern uint8_t dma_buffer[OneStepSize*OnePointSize_DMA];
 
 #endif /* __LCD_H */

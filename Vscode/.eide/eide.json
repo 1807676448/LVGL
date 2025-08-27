@@ -61,6 +61,9 @@
                   },
                   {
                     "path": "../Core/Src/usart.c"
+                  },
+                  {
+                    "path": "../Core/Src/memorymap.c"
                   }
                 ],
                 "folders": []
@@ -199,7 +202,7 @@
               "id": 2,
               "mem": {
                 "startAddr": "0x24000000",
-                "size": "0x80000"
+                "size": "0x100000"
               },
               "isChecked": true,
               "noInit": false
