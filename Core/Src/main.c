@@ -120,6 +120,8 @@ int main(void)
   lv_display_set_buffers(display1, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
   Three_Box_Move();
+  /* USER CODE END 2 */
+
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

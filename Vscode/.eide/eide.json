@@ -67,6 +67,9 @@
                   },
                   {
                     "path": "../Core/Src/My_LVGL.c"
+                  },
+                  {
+                    "path": "../Core/Src/dma2d.c"
                   }
                 ],
                 "folders": []
@@ -153,6 +156,9 @@
               },
               {
                 "path": "../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c"
+              },
+              {
+                "path": "../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma2d.c"
               }
             ],
             "folders": []
