@@ -8,6 +8,9 @@
 
 void My_Usart_Send(char *str);
 void My_Usart_Send_Num(int num);
+void My_Tick_Begin(void);
+uint32_t My_Tick_End(void);
+uint32_t My_Tick_Get(void);
 
 
 #endif 

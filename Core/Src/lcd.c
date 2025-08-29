@@ -8,7 +8,7 @@ volatile uint8_t spi_dma_tx_complete = 1;
 
 // 为DMA传输定义一个大的静态缓冲区，以减少DMA启动次数
 // 大小应为3的倍数(适配ILI9488的18-bit模式)，且小于65535
-uint8_t dma_buffer[OneStepSize*OnePointSize_DMA];
+uint8_t dma_buffer[OneStepSize*OnePointSize_DMA] __attribute__((aligned(32)));
 
 // 管理LCD重要参数
 // 默认为竖屏

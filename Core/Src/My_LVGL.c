@@ -11,19 +11,13 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
     // 2. 设置LCD硬件的刷新窗�??
     LCD_SetWindows(area->x1, area->y1, area->x2, area->y2);
 
-    // lvgl单次刷新窗口大小调试
-    //  My_Usart_Send_Num(area->x1);
-    //  My_Usart_Send_Num(area->y1);
-    //  My_Usart_Send_Num(area->x2);
-    //  My_Usrt_Send_Num(area->y2);
-    //  HAL_Delay(1000);
-
     // 3. 准备�??始传�??
     LCD_CS_CLR;
     LCD_RS_SET;
 
     // 将LVGL的像素缓冲区指针 (px_map) 转换�??16位颜色指�??
     uint16_t *color_p = (uint16_t *)px_map;
+
 
     // 4. 分块进行传输
     while (total_pixels_to_flush > 0)
@@ -34,31 +28,37 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
         {
             chunk_pixel_count = OneStepSize;
         }
-
         // **核心：进行颜色格式转�?? (�?? RGB565 -> RGB666)**
+        uint16_t pixel;
+        uint8_t *dma_ptr = dma_buffer;
+       
         for (int32_t i = 0; i < chunk_pixel_count; i++)
         {
-            uint16_t color16 = color_p[i];
-            dma_buffer[i * 3 + 0] = (color16 >> 8) & 0xF8; // R
-            dma_buffer[i * 3 + 1] = (color16 >> 3) & 0xFC; // G
-            dma_buffer[i * 3 + 2] = (color16 << 3);        // B
+            *dma_ptr++ = (*color_p >> 8) & 0xF8; // R
+            *dma_ptr++ = (*color_p >> 3) & 0xFC; // G
+            *dma_ptr++ = (*color_p << 3);        // B
+            color_p++;
         }
-
         // 等待上一次DMA传输完成
+
         while (!spi_dma_tx_complete)
             ;
 
-        // 清除标志位，准备�??始新的DMA传输
+        // 清除标志位，准备开始新的DMA传输
         spi_dma_tx_complete = 0;
+
+        // ***** 关键步骤：在启动DMA前，清理D-Cache *****
+        // 确保 dma_buffer 中的新数据被写入到主内存
+        SCB_CleanDCache_by_Addr((uint32_t*)dma_buffer, chunk_pixel_count * 3);
 
         // 启动DMA传输
         HAL_SPI_Transmit_DMA(&hspi1, dma_buffer, chunk_pixel_count * 3);
 
-        // 更新剩余像素计数和颜色指�??
+        // 更新剩余像素计数和颜色指针
         total_pixels_to_flush -= chunk_pixel_count;
         color_p += chunk_pixel_count;
     }
-
+    
     // 5. 等待�??后一块数据传输完�??
     while (!spi_dma_tx_complete)
         ;
@@ -68,6 +68,8 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 
     // 7. **非常重要**：�?�知LVGL刷新完成
     lv_display_flush_ready(display);
+
+    My_Tick_Get();
 }
 
 void Three_Box_Move(){

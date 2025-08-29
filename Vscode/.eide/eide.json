@@ -185,6 +185,18 @@
   "targets": {
     "LVGL": {
       "excludeList": [
+        "../Core/lvgl/examples/anim",
+        "../Core/lvgl/examples/arduino",
+        "../Core/lvgl/examples/assets",
+        "../Core/lvgl/examples/event",
+        "../Core/lvgl/examples/get_started",
+        "../Core/lvgl/examples/grad",
+        "../Core/lvgl/examples/layouts",
+        "../Core/lvgl/examples/libs",
+        "../Core/lvgl/examples/others",
+        "../Core/lvgl/examples/porting",
+        "../Core/lvgl/examples/scroll",
+        "../Core/lvgl/examples/styles",
         "../Core/lvgl/examples"
       ],
       "toolchain": "AC6",
@@ -313,7 +325,7 @@
             "output-debug-info": "enable"
           },
           "c/cpp-compiler": {
-            "optimization": "level-0",
+            "optimization": "level-3",
             "language-c": "c99",
             "language-cpp": "c++11",
             "warnings": "ac5-like-warnings"
