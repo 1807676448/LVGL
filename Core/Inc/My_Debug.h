@@ -3,6 +3,7 @@
 
 #include "usart.h"
 #include "sys.h"
+#include "tim.h"
 #include <stdio.h>
 #include <string.h>
 

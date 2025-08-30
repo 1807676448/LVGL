@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
-#include "memorymap.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -117,17 +116,25 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM6_Init();
   MX_USART1_UART_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim6); // 使能定时器驱�????,提供LVGL时基
+  HAL_TIM_Base_Start_IT(&htim7);
   LCD_Init();                    // 初始化LCD
-  lv_init();                     // 初始化LVGL
+  TP_Init();
+  lv_init(); // 初始化LVGL
 
   lv_display_t *display1 = lv_display_create(320, 480);
 
   lv_display_set_flush_cb(display1, my_flush_cb);
   lv_display_set_buffers(display1, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-  Three_Box_Move();
+  /* Create and set up at least one display before you register any input devices. */
+  lv_indev_t *indev = lv_indev_create();       /* Create input device connected to Default Display. */
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
+  lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
+
+  lv_example_button_3();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -139,6 +146,8 @@ int main(void)
     /* USER CODE BEGIN 3 */
     lv_timer_handler();
     HAL_Delay(5);
+    // My_Usart_Send_Num(1);
+    // TP_Write_Byte(0xf7);
   }
   /* USER CODE END 3 */
 }
@@ -268,8 +277,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.

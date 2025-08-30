@@ -69,7 +69,7 @@
                     "path": "../Core/Src/My_LVGL.c"
                   },
                   {
-                    "path": "../Core/Src/dma2d.c"
+                    "path": "../Core/Src/Touch.c"
                   }
                 ],
                 "folders": []

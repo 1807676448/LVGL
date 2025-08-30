@@ -39,3 +39,14 @@ uint32_t My_Tick_Get(void){
         return a - SystemTick;
     }
 }
+
+void HAL_Delay_Us(uint32_t us){
+    __HAL_TIM_DISABLE(&htim7);
+    __HAL_TIM_SET_COUNTER(&htim7, 0);
+    __HAL_TIM_ENABLE(&htim7);
+    while (__HAL_TIM_GET_COUNTER(&htim7) < us)
+    {
+    }
+    __HAL_TIM_DISABLE(&htim7);
+
+}

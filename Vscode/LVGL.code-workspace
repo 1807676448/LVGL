@@ -27,7 +27,12 @@
             "usart.h": "c",
             "main.h": "c",
             "my_lvgl.h": "c",
-            "stm32h7xx_hal.h": "c"
+            "stm32h7xx_hal.h": "c",
+            "charconv": "c",
+            "list": "c",
+            "xmemory": "c",
+            "math.h": "c",
+            "touch.h": "c"
         },
         "cortex-debug.variableUseNaturalFormat": true
     },
