@@ -32,7 +32,16 @@
             "list": "c",
             "xmemory": "c",
             "math.h": "c",
-            "touch.h": "c"
+            "touch.h": "c",
+            "*.clang-format": "c",
+            "stdio.h": "c",
+            "widgets_init.h": "c",
+            "gui_guider.h": "c",
+            "custom.h": "c",
+            "events_init.h": "c",
+            "string.h": "c",
+            "iosfwd": "c",
+            "xlocbuf": "c"
         },
         "cortex-debug.variableUseNaturalFormat": true
     },

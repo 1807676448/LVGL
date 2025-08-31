@@ -70,9 +70,9 @@ typedef struct
 extern _lcd_dev lcddev; // 全局LCD参数
 
 // LCD参数
-#define USE_HORIZONTAL 0 // 屏幕旋转方向（0=竖屏，1=横屏，2=180度，3=270度）
-#define LCD_W 320        // 屏幕物理宽度
-#define LCD_H 480        // 屏幕物理高度
+#define USE_HORIZONTAL 1 // 屏幕旋转方向（0=竖屏，1=横屏，2=180度，3=270度）
+#define LCD_W 480        // 屏幕物理宽度
+#define LCD_H 320        // 屏幕物理高度
 
 // TFTLCD部分外要调用的函数
 extern uint16_t POINT_COLOR; // 当前画笔颜色

@@ -173,6 +173,156 @@
             "folders": []
           }
         ]
+      },
+      {
+        "name": "GUIDER",
+        "files": [
+          {
+            "path": "../Core/custom/custom.c"
+          },
+          {
+            "path": "../Core/custom/custom.h"
+          },
+          {
+            "path": "../Core/custom/lv_conf_ext.h"
+          },
+          {
+            "path": "../Core/generated/events_init.c"
+          },
+          {
+            "path": "../Core/generated/events_init.h"
+          },
+          {
+            "path": "../Core/generated/gui_guider.c"
+          },
+          {
+            "path": "../Core/generated/gui_guider.h"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrCopy.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrCopy2.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrFinished.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrHome.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrLoader.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrPrintMenu.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrPrintMobile.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrPrintUSB.c"
+          },
+          {
+            "path": "../Core/generated/setup_scr_scrSetup.c"
+          },
+          {
+            "path": "../Core/generated/widgets_init.c"
+          },
+          {
+            "path": "../Core/generated/widgets_init.h"
+          },
+          {
+            "path": "../Core/generated/guider_customer_fonts/guider_customer_fonts.h"
+          },
+          {
+            "path": "../Core/generated/guider_fonts/lv_font_montserratMedium_12.c"
+          },
+          {
+            "path": "../Core/generated/guider_fonts/lv_font_montserratMedium_14.c"
+          },
+          {
+            "path": "../Core/generated/guider_fonts/lv_font_montserratMedium_16.c"
+          },
+          {
+            "path": "../Core/generated/guider_fonts/lv_font_montserratMedium_20.c"
+          },
+          {
+            "path": "../Core/generated/guider_fonts/lv_font_montserratMedium_25.c"
+          },
+          {
+            "path": "../Core/generated/images/_bright_RGB565A8_20x20.c"
+          },
+          {
+            "path": "../Core/generated/images/_btn_bg_1_RGB565A8_100x141.c"
+          },
+          {
+            "path": "../Core/generated/images/_btn_bg_2_RGB565A8_100x141.c"
+          },
+          {
+            "path": "../Core/generated/images/_btn_bg_3_RGB565A8_100x141.c"
+          },
+          {
+            "path": "../Core/generated/images/_btn_bg_4_RGB565A8_100x141.c"
+          },
+          {
+            "path": "../Core/generated/images/_cloud_RGB565A8_60x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_copy_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_eco_RGB565A8_29x27.c"
+          },
+          {
+            "path": "../Core/generated/images/_example_RGB565A8_310x228.c"
+          },
+          {
+            "path": "../Core/generated/images/_hue_RGB565A8_18x18.c"
+          },
+          {
+            "path": "../Core/generated/images/_internet_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_mobile_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_no_internet_RGB565A8_25x27.c"
+          },
+          {
+            "path": "../Core/generated/images/_pc_RGB565A8_30x29.c"
+          },
+          {
+            "path": "../Core/generated/images/_phone_RGB565A8_50x70.c"
+          },
+          {
+            "path": "../Core/generated/images/_print_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_printer2_RGB565A8_70x80.c"
+          },
+          {
+            "path": "../Core/generated/images/_ready_RGB565A8_100x100.c"
+          },
+          {
+            "path": "../Core/generated/images/_scan_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_setup_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_tel_RGB565A8_24x24.c"
+          },
+          {
+            "path": "../Core/generated/images/_usb_RGB565A8_37x47.c"
+          },
+          {
+            "path": "../Core/generated/images/_wave_RGB565A8_20x41.c"
+          },
+          {
+            "path": "../Core/generated/images/_wifi_RGB565A8_30x24.c"
+          }
+        ],
+        "folders": []
       }
     ]
   },
@@ -279,7 +429,9 @@
           "../Drivers/CMSIS/Device/ST/STM32H7xx/Include",
           "../Drivers/CMSIS/Include",
           ".cmsis/include",
-          "../MDK-ARM/RTE/_LVGL"
+          "../MDK-ARM/RTE/_LVGL",
+          "../Core/custom",
+          "../Core/generated"
         ],
         "libList": [],
         "defineList": [
@@ -322,10 +474,11 @@
           "beforeBuildTasks": [],
           "afterBuildTasks": [],
           "global": {
-            "output-debug-info": "enable"
+            "output-debug-info": "enable",
+            "use-microLIB": true
           },
           "c/cpp-compiler": {
-            "optimization": "level-3",
+            "optimization": "level-image-size",
             "language-c": "c99",
             "language-cpp": "c++11",
             "warnings": "ac5-like-warnings"

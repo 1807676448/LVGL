@@ -4,6 +4,7 @@
 #include "lcd.h"
 #include "sys.h"
 #include "main.h"
+#include "My_Debug.h"
 #include <stdlib.h>
 #include <math.h>
 

@@ -72,10 +72,11 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 void my_input_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     if(TP_Scan(0)) {
-        data->point.x = (4096-tp_dev.x)*0.08;
-        data->point.y = tp_dev.y*0.12;
-        My_Usart_Send_Num((int)data->point.x);
-        My_Usart_Send_Num((int)data->point.y);
+        data->point.y = 320-(4096-tp_dev.x)*0.08;
+        data->point.x = tp_dev.y*0.12;
+        // My_Usart_Send_Num((int)data->point.x);
+        // My_Usart_Send_Num((int)data->point.y);
+        // LCD_DrawPoint((int)data->point.x,(int)data->point.y);
         data->state = LV_INDEV_STATE_PRESSED;
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
@@ -128,8 +129,8 @@ void Three_Box_Move()
     lv_anim_set_var(&a, cont); // 动画作用于容器对象
     lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_x);
     lv_anim_set_values(&a, 10, 240); // 动画的X坐标范围
-    lv_anim_set_duration(&a, 100);
-    lv_anim_set_playback_duration(&a, 100);
+    lv_anim_set_duration(&a, 1500);
+    lv_anim_set_playback_duration(&a, 1500);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
     lv_anim_start(&a); /* USER CODE END 2 */
