@@ -1,5 +1,5 @@
 #include "Touch.h" // 包含触屏相关头文件（定义实际项目路径调整）
-
+#include "My_Debug.h"
 // 触屏设备结构体初始化（包含函数指针和各种状态变量）
 _m_tp_dev tp_dev =
     {

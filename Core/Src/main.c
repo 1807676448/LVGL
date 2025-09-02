@@ -124,7 +124,7 @@ int main(void)
   TP_Init();
   lv_init(); // 初始化LVGL
 
-  lv_display_t *display1 = lv_display_create(320, 480);
+  lv_display_t *display1 = lv_display_create(480, 320);
 
   lv_display_set_flush_cb(display1, my_flush_cb);
   lv_display_set_buffers(display1, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -134,7 +134,8 @@ int main(void)
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
   lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
 
-  lv_example_button_3();
+  Ji_Ben_Jie_Mian();
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */

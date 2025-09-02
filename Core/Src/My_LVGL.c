@@ -71,13 +71,16 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 
 void my_input_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
-    if(TP_Scan(0)) {
-        data->point.x = (4096-tp_dev.x)*0.08;
-        data->point.y = tp_dev.y*0.12;
-        My_Usart_Send_Num((int)data->point.x);
-        My_Usart_Send_Num((int)data->point.y);
+    if (TP_Scan(0))
+    {
+        data->point.y = (tp_dev.x) * 0.08;
+        data->point.x = tp_dev.y * 0.12;
+        // My_Usart_Send_Num((int)data->point.x);
+        // My_Usart_Send_Num((int)data->point.y);
         data->state = LV_INDEV_STATE_PRESSED;
-    } else {
+    }
+    else
+    {
         data->state = LV_INDEV_STATE_RELEASED;
     }
     // My_Usart_Send_Num(TP_Read_AD(0x90));
@@ -135,18 +138,6 @@ void Three_Box_Move()
     lv_anim_start(&a); /* USER CODE END 2 */
 }
 
-void lv_example_get_started_1(void)
-{
-    /*Change the active screen's background color*/
-    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x003a57), LV_PART_MAIN);
-
-    /*Create a white label, set its text and align it to the center*/
-    lv_obj_t *label = lv_label_create(lv_screen_active());
-    lv_label_set_text(label, "Hello world");
-    lv_obj_set_style_text_color(lv_screen_active(), lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-}
-
 /**
  * Create a style transition on a button to act like a gum when clicked
  */
@@ -187,43 +178,214 @@ void lv_example_button_3(void)
     lv_obj_t *label = lv_label_create(btn1);
     lv_label_set_text(label, "Gum");
 }
-void create_eight_points(void)
+
+// 全局内容区与当前页面
+static lv_obj_t *g_panel_content = NULL;
+static lv_obj_t *g_current_page = NULL;
+
+// 用于事件回调的上下文（仅保存目标页索引）
+typedef struct {
+    uint8_t idx;      // 点击后要显示的页面索引
+} nav_ctx_t;
+
+// 各页面的创建（按需创建）
+static lv_obj_t *create_page1(lv_obj_t *parent)
 {
-    lv_obj_t * parent = lv_screen_active();
-    // 定义8个点的坐标 (x, y)
-    const lv_point_t points[] = {
-        {50, 40},
-        {200, 40},
-        {50, 120},
-        {200, 120},
-        {50, 200},
-        {200, 200},
-        {50, 280},
-        {200, 280}
-    };
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_set_size(page, lv_obj_get_width(parent), lv_obj_get_height(parent));
+    lv_obj_set_pos(page, 0, 0);
+    lv_obj_set_style_pad_all(page, 12, 0);
+    lv_obj_set_style_border_width(page, 0, 0);
+    /* Make the page non-scrollable / non-draggable */
+    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLL_ONE);
 
-    // 循环创建8个点
-    for (int i = 0; i < 8; i++)
+    lv_obj_t *label = lv_label_create(page);
+    lv_label_set_text(label, "Page1");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    /* 两个并排的仪表盘，使用居中对齐并左右偏移，避免重叠 */
+    const int ARC_SIZE = 140;
+    const int ARC_X_OFFSET = 90; // 水平偏移量，确保间距
+
+    // 温度仪表（左）
+    lv_obj_t *arc_t = lv_arc_create(page);
+    lv_obj_set_size(arc_t, ARC_SIZE, ARC_SIZE);
+    lv_arc_set_range(arc_t, 0, 100);
+    lv_arc_set_value(arc_t, 26);
+    lv_obj_clear_flag(arc_t, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(arc_t, LV_ALIGN_CENTER, -ARC_X_OFFSET, -6);
+
+    lv_obj_t *title_t = lv_label_create(page);
+    lv_label_set_text(title_t, "Temperature");
+    lv_obj_align_to(title_t, arc_t, LV_ALIGN_OUT_TOP_MID, 0, -6);
+
+    lv_obj_t *val_t = lv_label_create(page);
+    lv_label_set_text(val_t, "26 C");
+    lv_obj_align_to(val_t, arc_t, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
+
+    // 湿度仪表（右）
+    lv_obj_t *arc_h = lv_arc_create(page);
+    lv_obj_set_size(arc_h, ARC_SIZE, ARC_SIZE);
+    lv_arc_set_range(arc_h, 0, 100);
+    lv_arc_set_value(arc_h, 55);
+    lv_obj_clear_flag(arc_h, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(arc_h, LV_ALIGN_CENTER, ARC_X_OFFSET, -6);
+
+    lv_obj_t *title_h = lv_label_create(page);
+    lv_label_set_text(title_h, "Humidity");
+    lv_obj_align_to(title_h, arc_h, LV_ALIGN_OUT_TOP_MID, 0, -6);
+
+    lv_obj_t *val_h = lv_label_create(page);
+    lv_label_set_text(val_h, "55 %");
+    lv_obj_align_to(val_h, arc_h, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
+
+    return page;
+}
+
+static lv_obj_t *create_page2(lv_obj_t *parent)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_set_size(page, lv_obj_get_width(parent), lv_obj_get_height(parent));
+    lv_obj_set_pos(page, 0, 0);
+    lv_obj_set_style_pad_all(page, 12, 0);
+    lv_obj_set_style_border_width(page, 0, 0);
+    /* Make the page non-scrollable / non-draggable */
+    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLL_ONE);
+
+    lv_obj_t *label = lv_label_create(page);
+    lv_label_set_text(label, "Page2");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *slider = lv_slider_create(page);
+    lv_obj_set_width(slider, 200);
+    lv_obj_align(slider, LV_ALIGN_CENTER, 0, 0);
+
+    return page;
+}
+
+static lv_obj_t *create_page3(lv_obj_t *parent)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_set_size(page, lv_obj_get_width(parent), lv_obj_get_height(parent));
+    lv_obj_set_pos(page, 0, 0);
+    lv_obj_set_style_pad_all(page, 12, 0);
+    lv_obj_set_style_border_width(page, 0, 0);
+    /* Make the page non-scrollable / non-draggable */
+    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLL_ONE);
+
+    lv_obj_t *label = lv_label_create(page);
+    lv_label_set_text(label, "Page3");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *sw = lv_switch_create(page);
+    lv_obj_align(sw, LV_ALIGN_CENTER, 0, 0);
+
+    return page;
+}
+
+static lv_obj_t *create_page4(lv_obj_t *parent)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_set_size(page, lv_obj_get_width(parent), lv_obj_get_height(parent));
+    lv_obj_set_pos(page, 0, 0);
+    lv_obj_set_style_pad_all(page, 12, 0);
+    lv_obj_set_style_border_width(page, 0, 0);
+    /* Make the page non-scrollable / non-draggable */
+    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLL_ONE);
+
+    lv_obj_t *label = lv_label_create(page);
+    lv_label_set_text(label, "Page4");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *dd = lv_dropdown_create(page);
+    lv_dropdown_set_options(dd, "A\nB\nC\nD");
+    lv_obj_align(dd, LV_ALIGN_CENTER, 0, 0);
+
+    return page;
+}
+
+static void switch_to_page(uint8_t idx)
+{
+    if(g_panel_content == NULL) return;
+    if(g_current_page) {
+        lv_obj_delete(g_current_page);
+        g_current_page = NULL;
+    }
+
+    switch(idx) {
+        case 0: g_current_page = create_page1(g_panel_content); break;
+        case 1: g_current_page = create_page2(g_panel_content); break;
+        case 2: g_current_page = create_page3(g_panel_content); break;
+        case 3: g_current_page = create_page4(g_panel_content); break;
+        default: g_current_page = create_page1(g_panel_content); break;
+    }
+
+    // 切换后刷新界面
+    lv_obj_t *scr = lv_screen_active();
+    lv_obj_update_layout(scr);
+    lv_obj_invalidate(scr);
+}
+
+static void nav_btn_event_cb(lv_event_t *e)
+{
+    nav_ctx_t *ctx = (nav_ctx_t *)lv_event_get_user_data(e);
+    if (ctx == NULL) return;
+    switch_to_page(ctx->idx);
+}
+
+void Ji_Ben_Jie_Mian(void)
+{
+    // 假设显示分辨率为 480x320，创建一个根容器铺满屏幕
+    lv_obj_t *root = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(root, 480, 320);
+    lv_obj_set_pos(root, 0, 0);
+    lv_obj_set_style_pad_all(root, 0, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+
+    // 左侧导航栏（固定宽度 120），右侧内容区（360x320）
+    const int NAV_W = 120;
+    const int SCR_W = 480;
+    const int SCR_H = 320;
+
+    // 左侧面板
+    lv_obj_t *panel_nav = lv_obj_create(root);
+    lv_obj_set_size(panel_nav, NAV_W, SCR_H);
+    lv_obj_set_pos(panel_nav, 0, 0);
+    lv_obj_set_style_pad_all(panel_nav, 8, 0);
+    lv_obj_set_style_border_width(panel_nav, 0, 0);
+    lv_obj_set_style_bg_color(panel_nav, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+
+    // 右侧内容区
+    lv_obj_t *panel_content = lv_obj_create(root);
+    lv_obj_set_size(panel_content, SCR_W - NAV_W, SCR_H);
+    lv_obj_set_pos(panel_content, NAV_W, 0);
+    lv_obj_set_style_pad_all(panel_content, 12, 0);
+    lv_obj_set_style_border_width(panel_content, 0, 0);
+    /* Ensure content panel is not scrollable/draggable */
+    lv_obj_clear_flag(panel_content, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLL_ONE);
+    g_panel_content = panel_content;
+    // 默认显示 Page1
+    g_current_page = create_page1(panel_content);
+
+    // 为每个按钮准备上下文，并创建按钮
+    static nav_ctx_t ctxs[4];
+    for (int i = 0; i < 4; i++)
     {
-        // 创建一个对象作为点
-        lv_obj_t * point_obj = lv_obj_create(parent);
-        if (point_obj == NULL) {
-            // 对象创建失败处理
-            return;
-        }
+        ctxs[i].idx = (uint8_t)i;
+    }
 
-        // 移除所有样式，让它看起来像一个点而不是一个面板
-        lv_obj_remove_style_all(point_obj);
-
-        // 设置点的大小
-        lv_obj_set_size(point_obj, 15, 15);
-
-        // 设置点的位置
-        lv_obj_set_pos(point_obj, points[i].x, points[i].y);
-
-        // 设置点的样式，使其成为一个红色的圆点
-        lv_obj_set_style_radius(point_obj, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(point_obj, lv_color_hex(0xFF0000), 0);
-        lv_obj_set_style_bg_opa(point_obj, LV_OPA_COVER, 0);
+    // 按钮工厂：创建导航按钮并绑定事件
+    int y = 8;
+    const int step = 70;
+    const char *names[4] = {"Page1", "Page2", "Page3", "Page4"};
+    for (int i = 0; i < 4; i++)
+    {
+        lv_obj_t *btn = lv_button_create(panel_nav);
+        lv_obj_set_size(btn, NAV_W - 24, 48);
+        lv_obj_set_pos(btn, 8, y + step * i);
+        lv_obj_t *lb = lv_label_create(btn);
+        lv_label_set_text(lb, names[i]);
+        lv_obj_center(lb);
+        lv_obj_add_event_cb(btn, nav_btn_event_cb, LV_EVENT_CLICKED, &ctxs[i]);
     }
 }
