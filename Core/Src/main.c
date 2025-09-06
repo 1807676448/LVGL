@@ -118,7 +118,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim6); // 使能定时器驱�????,提供LVGL时基
+  HAL_TIM_Base_Start_IT(&htim6); // 使能定时器驱动,提供LVGL时基
   HAL_TIM_Base_Start_IT(&htim7);
   LCD_Init();                    // 初始化LCD
   TP_Init();
@@ -133,11 +133,10 @@ int main(void)
   lv_indev_t *indev = lv_indev_create();       /* Create input device connected to Default Display. */
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
   lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
-
-  Ji_Ben_Jie_Mian();
   
   /* USER CODE END 2 */
-
+  setup_ui();
+  
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -147,8 +146,6 @@ int main(void)
     /* USER CODE BEGIN 3 */
     lv_timer_handler();
     HAL_Delay(5);
-    // My_Usart_Send_Num(1);
-    // TP_Write_Byte(0xf7);
   }
   /* USER CODE END 3 */
 }
@@ -215,14 +212,13 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  // �????查是否是TIM6定时器触发的中断
+  // 检查是否是TIM6定时器触发的中断
   if (htim->Instance == TIM6)
   {
-    // 为LVGL提供心跳，参数是中断的周期（毫秒�????
-    // 假设你的TIM6被配置为�????1ms中断�????�????
-    lv_tick_inc(1);
+    lv_tick_inc(1); //1ms触发一次,时序错误会导致lvgl卡顿
   }
 }
+//SPI发送完成回调函数
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1)
