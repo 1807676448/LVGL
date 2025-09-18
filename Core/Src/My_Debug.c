@@ -50,3 +50,17 @@ void HAL_Delay_Us(uint32_t us){
     __HAL_TIM_DISABLE(&htim7);
 
 }
+
+int fputc(int ch, FILE * f){
+	HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xffff);///<普通串口发送数据
+  	while(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TC) == RESET){}///<等待发送完成
+  	return ch;
+}
+
+
+int fgetc(FILE * F) {
+	uint8_t ch = 0;
+	HAL_UART_Receive(&huart1,&ch, 1, 0xffff);///<普通串口接收数据
+    while(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TC) == RESET){}///<等待发送完成
+	return ch; 
+}
