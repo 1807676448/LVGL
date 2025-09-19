@@ -132,19 +132,19 @@ int main(void)
 
   HAL_UART_Receive_IT(&huart1, uart1_rx_buf, 1);
 
-  // lv_init(); // 初始化LVGL
+  lv_init(); // 初始化LVGL
 
-  // lv_display_t *display1 = lv_display_create(480, 320);
+  lv_display_t *display1 = lv_display_create(480, 320);
 
-  // lv_display_set_flush_cb(display1, my_flush_cb);
-  // lv_display_set_buffers(display1, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(display1, my_flush_cb);
+  lv_display_set_buffers(display1, buf1, buf2, sizeof(buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-  // /* Create and set up at least one display before you register any input devices. */
-  // lv_indev_t *indev = lv_indev_create();       /* Create input device connected to Default Display. */
-  // lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
-  // lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
+  /* Create and set up at least one display before you register any input devices. */
+  lv_indev_t *indev = lv_indev_create();       /* Create input device connected to Default Display. */
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
+  lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
 
-  // setup_ui();
+  setup_ui();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -155,16 +155,16 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // lv_timer_handler();
-    // HAL_Delay(5);
-    printf("RAW output!\n\r");
-    for(int i=0;i<uart1_ins&&uart1_ins>0;i++){
-      printf("%c",uart1_rx_buf[i]);
-    }
-    printf("\n\r--%d\n\r",uart1_ins);
+    lv_timer_handler();
+    HAL_Delay(5);
+    // printf("RAW output!\n\r");
+    // for(int i=0;i<uart1_ins&&uart1_ins>0;i++){
+    //   printf("%c",uart1_rx_buf[i]);
+    // }
+    // printf("\n\r--%d\n\r",uart1_ins);
 
     My_cJSON_Get((char *)uart1_rx_buf);
-    HAL_Delay(1000);
+    // HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -255,11 +255,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     {
       uart1_ins = 0;
     }
-
     uart1_ins++;
-
     // 重新启动接收
-    
     HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[uart1_ins], 1);//大小为1才会仅中断
     // printf("F");
   }

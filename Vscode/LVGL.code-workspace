@@ -34,7 +34,8 @@
             "math.h": "c",
             "touch.h": "c",
             "stdio.h": "c",
-            "my_data.h": "c"
+            "my_data.h": "c",
+            "typeinfo": "c"
         },
         "cortex-debug.variableUseNaturalFormat": true
     },

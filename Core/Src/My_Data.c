@@ -22,6 +22,7 @@ static void print_object_items(cJSON *root)
         {
             // 同时输出整数与浮点格式
             printf("%s : %d (%.3f)\r\n", key, item->valueint, item->valuedouble);
+            update_screen1_item(key,item->valueint);
         }
         else if (item->type & cJSON_True)
         {
@@ -95,7 +96,7 @@ void My_cJSON_Get(char *json_data)
     cJSON *root = cJSON_Parse(json_data);
     if (!root)
     {
-        printf("Parse fail\r\n");
+        // printf("Parse fail\r\n");
         return;
     }
 
@@ -116,4 +117,8 @@ void My_cJSON_Get(char *json_data)
         HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
     }
     cJSON_Delete(root); // 释放根节点
+}
+
+void My_cJSON_Change(const char* key, const int valueint){
+
 }
