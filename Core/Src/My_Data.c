@@ -12,6 +12,7 @@ void clear_array(uint8_t *arr, size_t len)
 static void print_object_items(cJSON *root)
 {
     
+    
     for (cJSON *item = root->child; item; item = item->next)
     {
         const char *key = item->string ? item->string : "(null)";
