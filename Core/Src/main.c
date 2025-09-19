@@ -31,6 +31,7 @@
 #include "..\Core\lvgl\src\lvgl.h"
 #include "My_Debug.h"
 #include "My_LVGL.h"
+#include "My_Data.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,12 +71,15 @@ AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第�
 
 void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
 
+uint8_t uart1_rx_buf[500]; // 接收缓冲区
+int16_t uart1_ins = 0;
+
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -84,7 +88,7 @@ int main(void)
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
-   MPU_Config();
+  MPU_Config();
 
   /* Enable the CPU Cache */
 
@@ -120,8 +124,14 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim6); // 使能定时器驱动,提供LVGL时基
   HAL_TIM_Base_Start_IT(&htim7);
-  LCD_Init();                    // 初始化LCD
+
+  My_cJSON_Text();
+
+  LCD_Init(); // 初始化LCD
   TP_Init();
+
+  HAL_UART_Receive_IT(&huart1, uart1_rx_buf, 1);
+
   lv_init(); // 初始化LVGL
 
   lv_display_t *display1 = lv_display_create(480, 320);
@@ -133,12 +143,13 @@ int main(void)
   lv_indev_t *indev = lv_indev_create();       /* Create input device connected to Default Display. */
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /* Touch pad is a pointer-like device. */
   lv_indev_set_read_cb(indev, my_input_read);  /* Set driver function. */
-  
-  /* USER CODE END 2 */
+
   setup_ui();
-  
+  /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  static char buffer[50];
   while (1)
   {
     /* USER CODE END WHILE */
@@ -146,32 +157,42 @@ int main(void)
     /* USER CODE BEGIN 3 */
     lv_timer_handler();
     HAL_Delay(5);
+    // printf("RAW output!\n\r");
+    // for(int i=0;i<uart1_ins&&uart1_ins>0;i++){
+    //   printf("%c",uart1_rx_buf[i]);
+    // }
+    // printf("\n\r--%d\n\r",uart1_ins);
+
+    My_cJSON_Get((char *)uart1_rx_buf);
+    // HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Supply configuration update enable
-  */
+   */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
-  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY))
+  {
+  }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = 64;
@@ -191,10 +212,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
-                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 | RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
@@ -215,10 +234,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   // 检查是否是TIM6定时器触发的中断
   if (htim->Instance == TIM6)
   {
-    lv_tick_inc(1); //1ms触发一次,时序错误会导致lvgl卡顿
+    lv_tick_inc(1); // 1ms触发一次,时序错误会导致lvgl卡顿
   }
 }
-//SPI发送完成回调函数
+// SPI发送完成回调函数
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1)
@@ -227,10 +246,25 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
     spi_dma_tx_complete = 1;
   }
 }
+// 回调：接收完成（如 HAL_UART_Receive_IT / HAL_UART_Receive_DMA）
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    if (uart1_ins > 500 - 1)
+    {
+      uart1_ins = 0;
+    }
+    uart1_ins++;
+    // 重新启动接收
+    HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[uart1_ins], 1);//大小为1才会仅中断
+    // printf("F");
+  }
+}
 
 /* USER CODE END 4 */
 
- /* MPU Configuration */
+/* MPU Configuration */
 
 void MPU_Config(void)
 {
@@ -240,7 +274,7 @@ void MPU_Config(void)
   HAL_MPU_Disable();
 
   /** Initializes and configures the Region and the memory to be protected
-  */
+   */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
   MPU_InitStruct.BaseAddress = 0x0;
@@ -256,13 +290,12 @@ void MPU_Config(void)
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
 }
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -276,12 +309,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
