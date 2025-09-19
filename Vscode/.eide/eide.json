@@ -70,6 +70,12 @@
                   },
                   {
                     "path": "../Core/Src/Touch.c"
+                  },
+                  {
+                    "path": "../Core/Src/My_Data.c"
+                  },
+                  {
+                    "path": "../Core/Src/cJSON.c"
                   }
                 ],
                 "folders": []
@@ -357,7 +363,7 @@
           },
           "c/cpp-compiler": {
             "optimization": "level-3",
-            "language-c": "c99",
+            "language-c": "c11",
             "language-cpp": "c++11",
             "warnings": "ac5-like-warnings"
           },

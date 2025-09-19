@@ -33,7 +33,8 @@
             "xmemory": "c",
             "math.h": "c",
             "touch.h": "c",
-            "stdio.h": "c"
+            "stdio.h": "c",
+            "my_data.h": "c"
         },
         "cortex-debug.variableUseNaturalFormat": true
     },
