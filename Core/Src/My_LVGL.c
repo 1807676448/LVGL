@@ -81,7 +81,7 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
     // 6. 传输完成，拉高片选信号，结束本次传输
     LCD_CS_SET;
 
-    // 7. **非常重要**：通知LVGL刷新完成，使其可以继续渲染下一帧
+    // 7. 通知LVGL刷新完成，使其可以继续渲染下一帧
     lv_display_flush_ready(display);
 }
 
@@ -103,8 +103,6 @@ void my_input_read(lv_indev_t *indev, lv_indev_data_t *data)
         // 注意：这里的变换系数 (0.08, 0.12) 需要根据实际触摸屏和LCD的尺寸及安装方向进行校准
         data->point.y = (tp_dev.x) * 0.08; // 可能需要交换x,y或调整系数
         data->point.x = tp_dev.y * 0.12;   // 可能需要交换x,y或调整系数
-        // My_Usart_Send_Num((int)data->point.x); // 调试用，打印坐标
-        // My_Usart_Send_Num((int)data->point.y);
         data->state = LV_INDEV_STATE_PRESSED; // 设置状态为按下
     }
     else
@@ -371,7 +369,7 @@ void create_screen_1(void)
 
     // --- 数据可视化内容 ---
     // 示例数据数组 (值在0到100之间，用于条形图显示)
-    int data_values[10] = {25, 78, 45, 90, 15, 63, 38, 82, 55, 70};
+    int data_values[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     // 为数据项列表创建一个容器
     list_cont = lv_obj_create(screen_1);
@@ -704,6 +702,7 @@ void add_data2_to_chart_screen_3(int32_t new_point2)
  *
  * 此函数构建屏幕3的UI，展示一个动态更新的折线图。
  */
+//示例代码{"ZheXian1":40,"ZheXian2":60}
 void create_screen_3(void)
 {
     // 初始化随机数种子

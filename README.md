@@ -18,3 +18,23 @@
 
 ### 添加DMA2D,优化帧率
 ### 添加触屏功能
+
+# 服务器维护指令
+
+## 查询最近数据
+
+```
+
+mysql -u emqx_user -p123456 -D emqx_data -e "
+SELECT '--- 当前总记录数 ---' AS ''; 
+SELECT count(*) AS total_rows FROM mqtt_msg; 
+SELECT '--- 最近20条数据 (精简模式) ---' AS ''; 
+SELECT id, device_id, tds, cod, ph, temp, hum, created_at FROM mqtt_msg ORDER BY id DESC LIMIT 20;"
+
+监控器指令
+# 每 1 秒刷新一次
+watch -n 1 'mysql -u emqx_user -p123456 -D emqx_data -e "SELECT count(*) AS Total FROM mqtt_msg; SELECT id, device_id, tds, cod, ph, temp, hum, created_at FROM mqtt_msg ORDER BY id DESC LIMIT 40;"'
+
+
+
+```

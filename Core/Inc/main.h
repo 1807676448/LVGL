@@ -75,6 +75,8 @@ void Error_Handler(void);
 #define T_DO_GPIO_Port GPIOG
 #define T_IRQ_Pin GPIO_PIN_1
 #define T_IRQ_GPIO_Port GPIOG
+#define SPI2_CS_Pin GPIO_PIN_14
+#define SPI2_CS_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

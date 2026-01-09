@@ -8,57 +8,346 @@ void clear_array(uint8_t *arr, size_t len)
         arr[i] = 0;
     }
 }
-// 历遍全部节点并输出
-static void print_object_items(cJSON *root)
+
+// // 定义配置项结构体
+// typedef struct {
+//     char key[32];
+//     cJSON *value;
+//     uint8_t type; // 0:未使用, 1:整数, 2:浮点数, 3:字符串, 4:布尔值
+// } config_item_t;
+
+// // 配置存储数组
+// #define MAX_CONFIG_ITEMS 20
+static config_item_t config_items[MAX_CONFIG_ITEMS];
+static uint8_t config_count = 0;
+
+// 查找配置项索引
+static int find_config_index(const char *key)
 {
-    
-    for (cJSON *item = root->child; item; item = item->next)
+    for (int i = 0; i < config_count; i++)
     {
-        const char *key = item->string ? item->string : "(null)";
-        if (item->type & cJSON_String)
+        if (strcmp(config_items[i].key, key) == 0)
         {
-            printf("%s : %s\r\n", key, item->valuestring);
+            return i;
         }
-        else if (item->type & cJSON_Number)
+    }
+    return -1;
+}
+
+// 存储整数配置项
+void My_SendJson_Change_Int(const char *key, int value)
+{
+    int index = find_config_index(key);
+
+    if (index == -1)
+    {
+        // 新配置项
+        if (config_count >= MAX_CONFIG_ITEMS)
         {
-            // 同时输出整数与浮点格式
-            printf("%s : %d (%.3f)\r\n", key, item->valueint, item->valuedouble);
-            update_screen1_item(key,item->valueint);
+            printf("error-My_SendJson_Change_Int!\r\n");
+            return;
         }
-        else if (item->type & cJSON_True)
+        index = config_count++;
+        strncpy(config_items[index].key, key, sizeof(config_items[index].key) - 1);
+        config_items[index].key[sizeof(config_items[index].key) - 1] = '\0';
+    }
+
+    // 释放旧值
+    if (config_items[index].value)
+    {
+        cJSON_Delete(config_items[index].value);
+    }
+
+    // 创建新值
+    config_items[index].value = cJSON_CreateNumber(value);
+    config_items[index].type = 1;
+}
+
+// 存储浮点数配置项
+void My_SendJson_Change_Double(const char *key, double value)
+{
+    int index = find_config_index(key);
+
+    if (index == -1)
+    {
+        if (config_count >= MAX_CONFIG_ITEMS)
         {
-            printf("%s : true\r\n", key);
+            printf("error-My_SendJson_Change_Double!\r\n");
+            return;
         }
-        else if (item->type & cJSON_False)
+        index = config_count++;
+        strncpy(config_items[index].key, key, sizeof(config_items[index].key) - 1);
+        config_items[index].key[sizeof(config_items[index].key) - 1] = '\0';
+    }
+
+    if (config_items[index].value)
+    {
+        cJSON_Delete(config_items[index].value);
+    }
+
+    config_items[index].value = cJSON_CreateNumber(value);
+    config_items[index].type = 2;
+}
+
+// 存储字符串配置项
+void My_SendJson_Change_String(const char *key, const char *value)
+{
+    int index = find_config_index(key);
+
+    if (index == -1)
+    {
+        if (config_count >= MAX_CONFIG_ITEMS)
         {
-            printf("%s : false\r\n", key);
+            printf("error-My_SendJson_Change_String!\r\n");
+            return;
         }
-        else if (item->type & cJSON_NULL)
+        index = config_count++;
+        strncpy(config_items[index].key, key, sizeof(config_items[index].key) - 1);
+        config_items[index].key[sizeof(config_items[index].key) - 1] = '\0';
+    }
+
+    if (config_items[index].value)
+    {
+        cJSON_Delete(config_items[index].value);
+    }
+
+    config_items[index].value = cJSON_CreateString(value);
+    config_items[index].type = 3;
+}
+
+// 存储布尔值配置项
+void My_SendJson_Change_Bool(const char *key, bool value)
+{
+    int index = find_config_index(key);
+
+    if (index == -1)
+    {
+        if (config_count >= MAX_CONFIG_ITEMS)
         {
-            printf("%s : null\r\n", key);
+            printf("error-My_SendJson_Change_Bool!\r\n");
+            return;
         }
-        else if (item->type & cJSON_Object)
+        index = config_count++;
+        strncpy(config_items[index].key, key, sizeof(config_items[index].key) - 1);
+        config_items[index].key[sizeof(config_items[index].key) - 1] = '\0';
+    }
+
+    if (config_items[index].value)
+    {
+        cJSON_Delete(config_items[index].value);
+    }
+
+    config_items[index].value = cJSON_CreateBool(value);
+    config_items[index].type = 4;
+}
+
+// 通用存储函数（自动判断类型）
+void My_SendJson_Change(const char *key, void *value, uint8_t value_type)
+{
+    switch (value_type)
+    {
+    case 1: // 整数
+        My_SendJson_Change_Int(key, *(int *)value);
+        break;
+    case 2: // 浮点数
+        My_SendJson_Change_Double(key, *(double *)value);
+        break;
+    case 3: // 字符串
+        My_SendJson_Change_String(key, (char *)value);
+        break;
+    case 4: // 布尔值
+        My_SendJson_Change_Bool(key, *(bool *)value);
+        break;
+    default:
+        printf("Unsupported value type: %d\r\n", value_type);
+        break;
+    }
+}
+
+// 删除配置项
+void My_SendJson_Remove(const char *key)
+{
+    int index = find_config_index(key);
+    if (index == -1)
+        return;
+
+    // 释放内存
+    if (config_items[index].value)
+    {
+        cJSON_Delete(config_items[index].value);
+    }
+
+    // 移动后续项目
+    for (int i = index; i < config_count - 1; i++)
+    {
+        config_items[i] = config_items[i + 1];
+    }
+
+    config_count--;
+    config_items[config_count].type = 0;
+    config_items[config_count].key[0] = '\0';
+    config_items[config_count].value = NULL;
+}
+
+// 获取配置项数量
+uint8_t My_SendJson_GetCount(void)
+{
+    return config_count;
+}
+
+// 生成并发送JSON数据
+void My_SendJson_Send(void)
+{
+    if (config_count == 0)
+    {
+        printf("No configuration items to send\r\n");
+        return;
+    }
+
+    // 创建根JSON对象
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+    {
+        printf("Create JSON object failed\r\n");
+        return;
+    }
+
+    // 添加所有配置项到JSON对象
+    for (int i = 0; i < config_count; i++)
+    {
+        if (config_items[i].value)
         {
-            printf("%s : (object)\r\n", key);
-            print_object_items(item); // 递归
+            cJSON_AddItemToObject(root, config_items[i].key,
+                                  cJSON_Duplicate(config_items[i].value, 1));
         }
-        else if (item->type & cJSON_Array)
+    }
+
+    // 序列化JSON
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str)
+    {
+        printf("Sending JSON: %s\r\n", json_str);
+
+        // 这里添加实际的发送代码，例如通过UART、网络等
+        // HAL_UART_Transmit(&huart1, (uint8_t*)json_str, strlen(json_str), HAL_MAX_DELAY);
+
+        free(json_str);
+    }
+
+    cJSON_Delete(root);
+}
+
+// 打印所有存储的配置项
+void My_SendJson_PrintAll(void)
+{
+    printf("Stored configuration items (%d):\r\n", config_count);
+    for (int i = 0; i < config_count; i++)
+    {
+        printf("  [%d] %s: ", i, config_items[i].key);
+
+        if (config_items[i].value)
         {
-            printf("%s : (array)\r\n", key);
-            int idx = 0;
-            for (cJSON *sub = item->child; sub; sub = sub->next, idx++)
+            char *str = cJSON_PrintUnformatted(config_items[i].value);
+            if (str)
             {
-                if (sub->type & cJSON_String)
-                    printf("  [%d] %s\r\n", idx, sub->valuestring);
-                else if (sub->type & cJSON_Number)
-                    printf("  [%d] %d (%.3f)\r\n", idx, sub->valueint, sub->valuedouble);
-                else
-                    printf("  [%d] type=0x%x\r\n", idx, sub->type);
+                printf("%s", str);
+                free(str);
             }
         }
         else
         {
+            printf("(null)");
+        }
+        printf(" (type:%d)\r\n", config_items[i].type);
+    }
+}
+
+// 清空所有配置项
+void My_SendJson_ClearAll(void)
+{
+    for (int i = 0; i < config_count; i++)
+    {
+        if (config_items[i].value)
+        {
+            cJSON_Delete(config_items[i].value);
+        }
+    }
+    config_count = 0;
+    printf("All configuration items cleared\r\n");
+}
+
+// 历遍全部节点并输出
+static void print_object_items(cJSON *root)
+{
+    for (cJSON *item = root->child; item; item = item->next)
+    {
+        const char *key = item->string ? item->string : "(null)";
+
+        switch (item->type)
+        {
+        case cJSON_String:
+            printf("%s : %s\r\n", key, item->valuestring);
+            break;
+
+        case cJSON_Number:
+            // 同时输出整数与浮点格式
+            printf("%s : %d (%.3f)\r\n", key, item->valueint, item->valuedouble);
+            if ((float)(item->valueint) == (item->valuedouble))
+            {
+                My_SendJson_Change(key, &(item->valueint), 1);
+                update_screen1_item(key, item->valueint);
+                My_SendJson_PrintAll();
+            }
+            else
+            {
+                My_SendJson_Change(key, &(item->valueint), 2);
+                update_screen1_item(key, item->valueint);
+                My_SendJson_PrintAll();
+            }
+            break;
+
+        case cJSON_True:
+            printf("%s : true\r\n", key);
+            break;
+
+        case cJSON_False:
+            printf("%s : false\r\n", key);
+            break;
+
+        case cJSON_NULL:
+            printf("%s : null\r\n", key);
+            break;
+
+        case cJSON_Object:
+            printf("%s : (object)\r\n", key);
+            print_object_items(item); // 递归
+            break;
+
+        case cJSON_Array:
+            printf("%s : (array)\r\n", key);
+            int idx = 0;
+            for (cJSON *sub = item->child; sub; sub = sub->next, idx++)
+            {
+                switch (sub->type)
+                {
+                case cJSON_String:
+                    printf("  [%d] %s\r\n", idx, sub->valuestring);
+                    break;
+
+                case cJSON_Number:
+                    printf("  [%d] %d (%.3f)\r\n", idx, sub->valueint, sub->valuedouble);
+                    break;
+
+                default:
+                    printf("  [%d] type=0x%x\r\n", idx, sub->type);
+                    break;
+                }
+            }
+            break;
+
+        default:
             printf("%s : (unsupported type=0x%x)\r\n", key, item->type);
+            break;
         }
     }
 }
@@ -66,7 +355,7 @@ static void print_object_items(cJSON *root)
 void My_cJSON_Text(void)
 {
     printf("Start text test!\n\r");
-    const char *json_string = "{\"First\":\"Hello\", \"Second\":25, \"Third\":\"Beijing\"}";
+    const char *json_string = "{\"TDS\": 0,\"COD\": 0,\"TOC\": 0,\"UV254\": 0,\"pH\": 0,\"Tem\": 0,\"Hum\": 0}";
     cJSON *root = cJSON_Parse(json_string);
     if (!root)
     {
@@ -92,18 +381,21 @@ void My_cJSON_Text(void)
 }
 extern int16_t uart1_ins;
 extern uint8_t uart1_rx_buf[500];
-void My_cJSON_Get(char *json_data)
+extern int16_t uart2_ins;
+extern uint8_t uart2_rx_buf[500];
+void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
 {
     cJSON *root = cJSON_Parse(json_data);
     if (!root)
     {
-        // printf("Parse fail\r\n");
+        uart1_ins = 0;
+        uart2_ins = 0;
         return;
     }
 
     char *out = cJSON_PrintUnformatted(root);
 
-    if (out)
+    if (out && huart == &huart1)
     {
         printf("Runtime text test!\n\r");
 
@@ -117,9 +409,124 @@ void My_cJSON_Get(char *json_data)
         HAL_UART_Abort_IT(&huart1);
         HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
     }
+    else if (out && huart == &huart2)
+    {
+        printf("Runtime text test!\n\r");
+
+        print_object_items(root);
+        printf("RAW:%s\r\n", out);
+
+        free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
+
+        clear_array(json_data, 100);
+        uart2_ins = 0;
+        HAL_UART_Abort_IT(&huart2);
+        HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[0], 1);
+    }
+
     cJSON_Delete(root); // 释放根节点
 }
 
-void My_cJSON_Change(const char* key, const int valueint){
+// 从配置项数组中发送JSON数据
+void ConfigData_SendJSON(UART_HandleTypeDef *huart)
+{
+    if (config_count == 0)
+    {
+        printf("No configuration items to send\r\n");
+        return;
+    }
 
+    // 创建根对象
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+    {
+        printf("ConfigData_SendJSON-error");
+        return;
+    }
+
+    // 添加id字段
+    cJSON_AddStringToObject(root, "id", "1");
+
+    // 创建params对象
+    cJSON *params = cJSON_CreateObject();
+    if (!params)
+    {
+        cJSON_Delete(root);
+        return;
+    }
+    cJSON_AddItemToObject(root, "params", params);
+
+    // 遍历配置项数组，添加到params中
+    for (int i = 0; i < config_count; i++)
+    {
+        if (config_items[i].type != 0 && config_items[i].value != NULL)
+        {
+            // 为每个配置项创建一个对象，包含value字段
+            cJSON *item_obj = cJSON_CreateObject();
+            if (item_obj)
+            {
+                // 根据类型将值添加到value字段
+                switch (config_items[i].type)
+                {
+                case 1: // 整数
+                case 2: // 浮点数
+                    cJSON_AddItemToObject(item_obj, "value",
+                                          cJSON_Duplicate(config_items[i].value, 1));
+                    break;
+
+                case 3: // 字符串
+                    cJSON_AddStringToObject(item_obj, "value",
+                                            config_items[i].value->valuestring);
+                    break;
+
+                case 4: // 布尔值
+                    cJSON_AddBoolToObject(item_obj, "value",
+                                          cJSON_IsTrue(config_items[i].value));
+                    break;
+
+                default:
+                    // 不支持的类型，跳过
+                    cJSON_Delete(item_obj);
+                    continue;
+                }
+
+                // 将对象添加到params中，使用配置项的key作为字段名
+                cJSON_AddItemToObject(params, config_items[i].key, item_obj);
+            }
+        }
+    }
+
+    // 序列化为JSON字符串
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str)
+    {
+        // 发送JSON数据
+        Send_JSON_Over_UART(json_str, huart);
+        free(json_str);
+    }
+
+    // 清理内存
+    cJSON_Delete(root);
+}
+
+// 通过UART发送JSON数据
+void Send_JSON_Over_UART(const char *json_str, UART_HandleTypeDef *huart)
+{
+    if (huart == NULL || json_str == NULL)
+    {
+        return;
+    }
+
+    // 计算字符串长度
+    size_t len = strlen(json_str);
+
+    // 使用HAL_UART_Transmit发送数据
+    HAL_UART_Transmit(huart, (uint8_t *)json_str, len, HAL_MAX_DELAY);
+
+    // 可选：发送换行符以便于接收端识别结束
+    HAL_UART_Transmit(huart, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
+}
+
+void My_cJSON_Change(const char *key, const int valueint)
+{
 }
