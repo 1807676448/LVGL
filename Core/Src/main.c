@@ -67,7 +67,7 @@ static void MPU_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
-#define SendData_Time 30000 //每30s发送一次水质数据
+#define SendData_Time 15000 //每30s发送一次水质数据
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
 AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第二帧缓冲区
@@ -151,6 +151,8 @@ int main(void)
 
   HAL_UART_Receive_IT(&huart1, uart1_rx_buf, 1);
   HAL_UART_Receive_IT(&huart2, uart2_rx_buf, 1);
+  
+  Send_JSON_Over_UART("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
 
   lv_init(); // 初始化LVGL
 
@@ -170,6 +172,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   static char buffer[50];
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -257,7 +260,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-static uint16_t times = 0;
+static uint64_t times = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   // 检查是否是TIM6定时器触发的中断
@@ -268,10 +271,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   if(htim->Instance == TIM13){
     times++;
-    if(times > SendData_Time){
+    if(times % SendData_Time == 0){ // 每30000ms发送一次水质数据
+      printf("Send water quality data\r\n");
       ConfigData_SendJSON(&huart1);
       ConfigData_SendJSON(&huart2);
-      times = 0;
+    }
+    if(times % 10000 == 10){ // 每6000000ms请求一次时间戳,约1小时
+      printf("Request time stamp\r\n");
+      Send_JSON_Over_UART("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
     }
   }
 }

@@ -421,7 +421,29 @@ extern int16_t uart2_ins;
 extern uint8_t uart2_rx_buf[500];
 void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
 {
-    cJSON *root = cJSON_Parse(json_data);
+    // 如果数据以 +MQRECV 开头，找到 JSON 部分的起始位置
+    char *json_start = strchr(json_data, '{');
+    if (!json_start)
+    {
+        // 没找到 '{', 可能是非 JSON 数据或者尚未接收完整，这里可以简易处理
+        cJSON *root_raw = cJSON_Parse(json_data);
+        if (!root_raw)
+        {
+            if (uart1_ins > 150 || uart2_ins > 150)
+            {
+                uart1_ins = 0;
+                uart2_ins = 0;
+            }
+            return;
+        }
+        else
+        {
+            json_start = json_data; // 刚好是完整 JSON
+            cJSON_Delete(root_raw);
+        }
+    }
+
+    cJSON *root = cJSON_Parse(json_start);
     if (!root)
     {
         if (uart1_ins > 150 || uart2_ins > 150)
@@ -541,8 +563,25 @@ void ConfigData_SendJSON(UART_HandleTypeDef *huart)
     char *json_str = cJSON_PrintUnformatted(root);
     if (json_str)
     {
-        // 发送JSON数据
-        Send_JSON_Over_UART(json_str, huart);
+        // 拼接前缀 "MQPUB,0,0,"
+        const char *prefix = "MQPUB,0,0, ";
+        size_t new_len = strlen(prefix) + strlen(json_str) + 1;
+        char *full_str = (char *)malloc(new_len);
+        if (full_str)
+        {
+            strcpy(full_str, prefix);
+            strcat(full_str, json_str);
+            // 发送拼接后的数据
+            Send_JSON_Over_UART(full_str, huart);
+            free(full_str);
+        }
+        else
+        {
+            printf("Memory allocation failed for full_str\r\n");
+            // 内存不足时，至少尝试发送原始JSON（或报错）
+            // Send_JSON_Over_UART(json_str, huart);
+        }
+
         free(json_str);
     }
 
@@ -555,6 +594,7 @@ void Send_JSON_Over_UART(const char *json_str, UART_HandleTypeDef *huart)
 {
     if (huart == NULL || json_str == NULL)
     {
+        printf("Send_JSON_Over_UART-error\r\n");
         return;
     }
 
