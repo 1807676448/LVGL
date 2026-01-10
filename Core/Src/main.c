@@ -32,6 +32,8 @@
 #include "My_Debug.h"
 #include "My_LVGL.h"
 #include "My_Data.h"
+
+#include <time.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,6 +78,8 @@ uint8_t uart1_rx_buf[500]; // 接收缓冲区
 int16_t uart1_ins = 0;
 uint8_t uart2_rx_buf[500]; // 接收缓冲区
 int16_t uart2_ins = 0;
+
+uint64_t UNX_Now_Time = 0; // 当前时间戳
 
 /* USER CODE END 0 */
 
@@ -175,7 +179,20 @@ int main(void)
     HAL_Delay(5);
     My_cJSON_Get((char *)uart1_rx_buf, &huart1);
     My_cJSON_Get((char *)uart2_rx_buf, &huart2);
-    
+
+    // update_main_screen_info();
+    // printf("%s\r\n", uart2_rx_buf);
+
+    if (UNX_Now_Time > 0)
+    {
+      time_t t = (time_t)(UNX_Now_Time / 1000 + 28800); // 转为秒并调整为北京时间
+      struct tm *lt = localtime(&t);
+      char time_str[10];
+      strftime(time_str, sizeof(time_str), "%H:%M:%S", lt);
+      char date_str[12];
+      strftime(date_str, sizeof(date_str), "%Y-%m-%d", lt);
+      update_main_screen_info(time_str, date_str, NULL, NULL);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -247,6 +264,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM6)
   {
     lv_tick_inc(1); // 1ms触发一次,时序错误会导致lvgl卡顿
+    UNX_Now_Time += 1;
   }
   if(htim->Instance == TIM13){
     times++;

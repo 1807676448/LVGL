@@ -1,4 +1,5 @@
 #include "My_Data.h"
+#include <math.h>
 
 // 基础解析函数
 void clear_array(uint8_t *arr, size_t len)
@@ -238,6 +239,7 @@ void My_SendJson_Send(void)
 }
 
 // 打印所有存储的配置项
+extern uint64_t UNX_Now_Time;
 void My_SendJson_PrintAll(void)
 {
     printf("Stored configuration items (%d):\r\n", config_count);
@@ -245,18 +247,50 @@ void My_SendJson_PrintAll(void)
     {
         printf("  [%d] %s: ", i, config_items[i].key);
 
-        if (config_items[i].value)
+        cJSON *value = config_items[i].value;
+        if (!value)
         {
-            char *str = cJSON_PrintUnformatted(config_items[i].value);
-            if (str)
-            {
-                printf("%s", str);
-                free(str);
-            }
+            printf("(null)");
         }
         else
         {
-            printf("(null)");
+            switch (config_items[i].type)
+            {
+            case 1: // 整数
+                printf("%lld", (long long)llround(value->valuedouble));
+                break;
+            case 2: // 浮点
+                if (strcmp(config_items[i].key, "NowTime") == 0 || strcmp(config_items[i].key, "timestamp") == 0)
+                {
+                    UNX_Now_Time = (uint64_t)llround(value->valuedouble);
+                    printf("%lld", (long long)llround(value->valuedouble));
+                }
+                else
+                {
+                    printf("%.6f", value->valuedouble);
+                }
+                break;
+            case 3: // 字符串
+                printf("%s", value->valuestring ? value->valuestring : "(null)");
+                break;
+            case 4: // 布尔
+                printf("%s", cJSON_IsTrue(value) ? "true" : "false");
+                break;
+            default:
+            {
+                char *str = cJSON_PrintUnformatted(value);
+                if (str)
+                {
+                    printf("%s", str);
+                    free(str);
+                }
+                else
+                {
+                    printf("(unknown)");
+                }
+                break;
+            }
+            }
         }
         printf(" (type:%d)\r\n", config_items[i].type);
     }
@@ -291,18 +325,20 @@ static void print_object_items(cJSON *root)
 
         case cJSON_Number:
             // 同时输出整数与浮点格式
-            printf("%s : %d (%.3f)\r\n", key, item->valueint, item->valuedouble);
+            double raw = cJSON_GetNumberValue(item);
+            int64_t as_int = (int64_t)llround(raw);
+            printf("%s : %lld (%.3f)\r\n", key, (long long)as_int, raw);
             if ((float)(item->valueint) == (item->valuedouble))
             {
                 My_SendJson_Change(key, &(item->valueint), 1);
                 update_screen1_item(key, item->valueint);
-                My_SendJson_PrintAll();
+                // My_SendJson_PrintAll();
             }
             else
             {
-                My_SendJson_Change(key, &(item->valueint), 2);
+                My_SendJson_Change(key, &(item->valuedouble), 2);
                 update_screen1_item(key, item->valueint);
-                My_SendJson_PrintAll();
+                // My_SendJson_PrintAll();
             }
             break;
 
@@ -355,7 +391,7 @@ static void print_object_items(cJSON *root)
 void My_cJSON_Text(void)
 {
     printf("Start text test!\n\r");
-    const char *json_string = "{\"TDS\": 0,\"COD\": 0,\"TOC\": 0,\"UV254\": 0,\"pH\": 0,\"Tem\": 0,\"Hum\": 0}";
+    const char *json_string = "{\"TDS\": 0,\"COD\": 0,\"TOC\": 0,\"UV254\": 0,\"pH\": 0,\"Tem\": 0,\"Hum\": 0,\"NowTime\": 0}";
     cJSON *root = cJSON_Parse(json_string);
     if (!root)
     {
@@ -388,8 +424,11 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
     cJSON *root = cJSON_Parse(json_data);
     if (!root)
     {
-        uart1_ins = 0;
-        uart2_ins = 0;
+        if (uart1_ins > 150 || uart2_ins > 150)
+        {
+            uart1_ins = 0;
+            uart2_ins = 0;
+        }
         return;
     }
 
@@ -401,6 +440,7 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
 
         print_object_items(root);
         printf("RAW:%s\r\n", out);
+        My_SendJson_PrintAll();
 
         free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
 
@@ -409,12 +449,13 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
         HAL_UART_Abort_IT(&huart1);
         HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
     }
-    else if (out && huart == &huart2)
+    if (out && huart == &huart2)
     {
         printf("Runtime text test!\n\r");
 
         print_object_items(root);
         printf("RAW:%s\r\n", out);
+        My_SendJson_PrintAll();
 
         free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
 
