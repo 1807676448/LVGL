@@ -1,8 +1,46 @@
 #include "My_LVGL.h"
+#include "My_Data.h"
 #include "stm32h7xx_hal.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h> // 用于时间函数（如果需要）
+
+/* ===== 数据显示范围宏定义 ===== */
+// 水质相关参数
+#define TDS_MIN         0
+#define TDS_MAX         1000
+#define COD_MIN         0
+#define COD_MAX         100
+#define TOC_MIN         0
+#define TOC_MAX         100
+#define UV254_MIN       0
+#define UV254_MAX       100
+#define PH_MIN          0
+#define PH_MAX          14
+
+// 温湿度相关
+#define TEM_MIN         -40
+#define TEM_MAX         85
+#define HUM_MIN         0
+#define HUM_MAX         100
+#define AIR_TEMP_MIN    -40
+#define AIR_TEMP_MAX    85
+#define AIR_HUM_MIN     0
+#define AIR_HUM_MAX     100
+
+// 气象相关
+#define PRESSURE_MIN    900
+#define PRESSURE_MAX    1100
+#define ALTITUDE_MIN    -500
+#define ALTITUDE_MAX    5000
+#define TUR_MIN         0
+#define TUR_MAX         3000
+
+/* ===== 数据显示格式宏定义 ===== */
+#define DISPLAY_FORMAT_INT      "%d"
+#define DISPLAY_FORMAT_FLOAT_1  "%.1f"
+#define DISPLAY_FORMAT_FLOAT_2  "%.2f"
+#define DISPLAY_FORMAT_FLOAT_3  "%.3f"
 
 /**
  * @brief LVGL显示刷新回调函数
@@ -101,8 +139,8 @@ void my_input_read(lv_indev_t *indev, lv_indev_data_t *data)
     {
         // 获取触摸点坐标并进行坐标变换和缩放
         // 注意：这里的变换系数 (0.08, 0.12) 需要根据实际触摸屏和LCD的尺寸及安装方向进行校准
-        data->point.y = (tp_dev.x) * 0.08; // 可能需要交换x,y或调整系数
-        data->point.x = tp_dev.y * 0.12;   // 可能需要交换x,y或调整系数
+        data->point.y = (tp_dev.x) * 0.08;    // 可能需要交换x,y或调整系数
+        data->point.x = tp_dev.y * 0.12;      // 可能需要交换x,y或调整系数
         data->state = LV_INDEV_STATE_PRESSED; // 设置状态为按下
     }
     else
@@ -249,7 +287,7 @@ void create_main_screen(void)
 
     // --- 在左侧容器中创建按钮 ---
     lv_obj_t *buttons[4];                                                                   // 按钮对象数组
-    const char *button_labels[] = {"转到屏幕 1", "转到屏幕 2", "转到屏幕 3", "转到屏幕 4"}; // 按钮标签
+    const char *button_labels[] = {"水质数据", "设备开关", "折线图", "About"}; // 按钮标签
 
     for (int i = 0; i < 4; i++)
     {
@@ -293,6 +331,15 @@ extern void back_to_main_event_handler(lv_event_t *e); // 声明返回主菜单�
 
 static lv_obj_t *list_cont;
 
+/* ===== 数据项配置结构 ===== */
+typedef struct
+{
+    const char *name;           // 项目名称
+    int range_min;              // 显示范围最小值
+    int range_max;              // 显示范围最大值
+    const char *display_format; // 显示格式字符串
+} DataItemConfig_t;
+
 typedef struct
 {
     const char *name;      // 名称(常量字符串)
@@ -300,28 +347,64 @@ typedef struct
     lv_obj_t *value_label; // 显示数值的标签
 } screen1_item_t;
 
-static screen1_item_t screen1_items[7]; // 当前有7个项目
+#define SCREEN1_ITEM_TOTAL 11
+
+/* ===== 各项数据的配置 ===== */
+static const DataItemConfig_t item_configs[SCREEN1_ITEM_TOTAL] = {
+    {"TDS",       TDS_MIN,       TDS_MAX,       DISPLAY_FORMAT_FLOAT_2},
+    {"COD",       COD_MIN,       COD_MAX,       DISPLAY_FORMAT_INT},
+    {"TOC",       TOC_MIN,       TOC_MAX,       DISPLAY_FORMAT_INT},
+    {"UV254",     UV254_MIN,     UV254_MAX,     DISPLAY_FORMAT_FLOAT_2},
+    {"pH",        PH_MIN,        PH_MAX,        DISPLAY_FORMAT_FLOAT_1},
+    {"Tem",       TEM_MIN,       TEM_MAX,       DISPLAY_FORMAT_FLOAT_1},
+    // {"Hum",       HUM_MIN,       HUM_MAX,       DISPLAY_FORMAT_FLOAT_1},
+    {"Tur",       TUR_MIN,       TUR_MAX,       DISPLAY_FORMAT_FLOAT_2},
+    {"air_temp",  AIR_TEMP_MIN,  AIR_TEMP_MAX,  DISPLAY_FORMAT_FLOAT_1},
+    {"air_hum",   AIR_HUM_MIN,   AIR_HUM_MAX,   DISPLAY_FORMAT_FLOAT_1},
+    {"pressure",  PRESSURE_MIN,  PRESSURE_MAX,  DISPLAY_FORMAT_FLOAT_1},
+    {"altitude",  ALTITUDE_MIN,  ALTITUDE_MAX,  DISPLAY_FORMAT_FLOAT_1},
+};
+
+static screen1_item_t screen1_items[SCREEN1_ITEM_TOTAL];
 static uint8_t screen1_item_count = 0;
 
 /**
  * @brief 根据名称更新屏幕1对应项目的数值
  * @param name  项目名称(如 "TDS","COD"...)
- * @param value 新值(0~100，可自行扩展范围)
+ * @param value 新值(整数或浮点数均可通过My_SendJson_QueryValue传入)
  * @return 0 成功; 1 未找到; 2 对象未创建; 3 值超范围
  * @note 需在 LVGL 线程/上下文中调用(不要直接在中断里调用)。若在中断，可用 lv_async_call 封装。
  */
-int update_screen1_item(const char *name, int value)
+int update_screen1_item(const char *name, double value)
 {
     if (!screen_1)
         return 2;
-    if (value < 0 || value > 100)
+
+    // 查找对应的配置和项目
+    int config_idx = -1;
+    for (int i = 0; i < SCREEN1_ITEM_TOTAL; i++)
+    {
+        if (strcmp(item_configs[i].name, name) == 0)
+        {
+            config_idx = i;
+            break;
+        }
+    }
+    
+    if (config_idx == -1)
+        return 1; // 未找到配置
+
+    // 检查值是否超出范围
+    if (value < item_configs[config_idx].range_min || value > item_configs[config_idx].range_max)
         return 3;
 
-    if(name && strcmp(name, "ZheXian1") == 0){
-        add_data1_to_chart_screen_3(value);
+    if (name && strcmp(name, "ZheXian1") == 0)
+    {
+        add_data1_to_chart_screen_3((int32_t)value);
     }
-    else if(name && strcmp(name, "ZheXian2") == 0){
-        add_data2_to_chart_screen_3(value);
+    else if (name && strcmp(name, "ZheXian2") == 0)
+    {
+        add_data2_to_chart_screen_3((int32_t)value);
     }
 
     for (uint8_t i = 0; i < screen1_item_count; i++)
@@ -330,12 +413,12 @@ int update_screen1_item(const char *name, int value)
         {
             if (screen1_items[i].bar)
             {
-                lv_bar_set_value(screen1_items[i].bar, value, LV_ANIM_OFF);
+                lv_bar_set_value(screen1_items[i].bar, (int32_t)value, LV_ANIM_OFF);
             }
             if (screen1_items[i].value_label)
             {
-                static char buf[12];
-                snprintf(buf, sizeof(buf), "%d", value);
+                static char buf[32];
+                snprintf(buf, sizeof(buf), item_configs[config_idx].display_format, value);
                 lv_label_set_text(screen1_items[i].value_label, buf);
             }
             return 0;
@@ -356,14 +439,14 @@ void create_screen_1(void)
 
     // 添加标题标签
     lv_obj_t *title = lv_label_create(screen_1);
-    lv_label_set_text(title, "数据可视化屏幕");
+    lv_label_set_text(title, "水质检测数据");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10); // 将标题对齐到顶部中央
 
     // 添加返回按钮
     lv_obj_t *back_btn = lv_button_create(screen_1);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回主菜单");
+    lv_label_set_text(back_label, "返回");
     lv_obj_center(back_label);                                                         // 将标签居中放置在按钮上
     lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
 
@@ -373,8 +456,8 @@ void create_screen_1(void)
 
     // 为数据项列表创建一个容器
     list_cont = lv_obj_create(screen_1);
-    // 设置容器大小，宽度为屏幕90%，高度为屏幕高度减去80像素
-    lv_obj_set_size(list_cont, LV_PCT(90), LV_VER_RES - 80);
+    // 设置容器大小，宽度为屏幕90%，高度为屏幕高度减去100像素
+    lv_obj_set_size(list_cont, LV_PCT(90), LV_VER_RES - 100);
     // 将容器放置在标题下方
     lv_obj_align_to(list_cont, title, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
     lv_obj_set_flex_flow(list_cont, LV_FLEX_FLOW_COLUMN); // 设置为垂直流式布局
@@ -403,11 +486,11 @@ void create_screen_1(void)
     // lv_style_set_bg_color(&bar_indic_style, lv_color_hex(0xDC3545)); // 或鲜艳红色
     lv_style_set_bg_opa(&bar_indic_style, LV_OPA_COVER); // 设置填充不透明度为完全不透明
 
-    const char *names[] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Hum"};
+    const char *names[SCREEN1_ITEM_TOTAL] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
     screen1_item_count = 0;
 
-    // 创建10个数据项
-    for (int i = 0; i < 7; i++)
+    // 创建全部数据项
+    for (int i = 0; i < SCREEN1_ITEM_TOTAL; i++)
     {
         lv_obj_t *item_cont = lv_obj_create(list_cont);
         lv_obj_set_size(item_cont, LV_PCT(100), 40);
@@ -418,27 +501,52 @@ void create_screen_1(void)
         // 名称标签
         lv_obj_t *label = lv_label_create(item_cont);
         lv_label_set_text(label, names[i]);
-        lv_obj_set_width(label, 60);
+        lv_obj_set_width(label, 70);
 
-        // 数值标签
-        char value_text[8];
-        snprintf(value_text, sizeof(value_text), "%d", data_values[i]);
+        // 数值标签（从My_Data查询初始值）
+        char value_text[32];
+        double value_double = 0.0;
+        
+        if (My_SendJson_QueryValue(names[i], value_text, sizeof(value_text)))
+        {
+            // 查询成功，移除JSON引号并转换为数字
+            if (value_text[0] == '"')
+            {
+                memmove(value_text, value_text + 1, strlen(value_text));
+                char *last_quote = strchr(value_text, '"');
+                if (last_quote)
+                    *last_quote = '\0';
+            }
+            value_double = atof(value_text);
+        }
+        
+        // 使用配置的格式显示数值
+        snprintf(value_text, sizeof(value_text), item_configs[i].display_format, value_double);
+        
         lv_obj_t *value_label = lv_label_create(item_cont);
         lv_label_set_text(value_label, value_text);
-        lv_obj_set_width(value_label, 40);
+        lv_obj_set_width(value_label, 80);
 
-        // 条形图
+        // 条形图：使用配置中的范围
         lv_obj_t *bar = lv_bar_create(item_cont);
-        lv_bar_set_range(bar, 0, 100);
-        lv_bar_set_value(bar, data_values[i], LV_ANIM_OFF);
+        lv_bar_set_range(bar, item_configs[i].range_min, item_configs[i].range_max);
+        
+        // 设置初始值（用数值中点作为演示，或者取查询到的值）
+        int bar_value = (item_configs[i].range_min + item_configs[i].range_max) / 2;
+        if (value_double >= item_configs[i].range_min && value_double <= item_configs[i].range_max)
+        {
+            bar_value = (int)value_double;
+        }
+        
+        lv_bar_set_value(bar, bar_value, LV_ANIM_OFF);
         lv_obj_set_flex_grow(bar, 1);
         lv_obj_add_style(bar, &bar_bg_style, LV_PART_MAIN);
         lv_obj_add_style(bar, &bar_indic_style, LV_PART_INDICATOR);
         lv_obj_set_height(bar, 20);
 
         // 保存映射
-        screen1_items[i].name        = names[i];
-        screen1_items[i].bar         = bar;
+        screen1_items[i].name = names[i];
+        screen1_items[i].bar = bar;
         screen1_items[i].value_label = value_label;
         screen1_item_count++;
 
@@ -451,109 +559,172 @@ void create_screen_1(void)
 extern lv_obj_t *screen_2;                             // 声明屏幕2对象
 extern void back_to_main_event_handler(lv_event_t *e); // 声明返回主菜单事件处理函数
 
-// --- 事件处理函数原型声明 ---
-static void button_1_event_handler(lv_event_t *e); // 按钮1事件处理
-static void button_2_event_handler(lv_event_t *e); // 按钮2事件处理
-static void button_3_event_handler(lv_event_t *e); // 按钮3事件处理
-static void button_4_event_handler(lv_event_t *e); // 按钮4事件处理
-
-static void switch_1_event_handler(lv_event_t *e); // 开关1事件处理
-static void switch_2_event_handler(lv_event_t *e); // 开关2事件处理
-static void switch_3_event_handler(lv_event_t *e); // 开关3事件处理
-static void switch_4_event_handler(lv_event_t *e); // 开关4事件处理
-
-// --- 事件处理函数定义 (空函数体) ---
-/**
- * @brief 按钮1点击事件处理函数
- *
- * @param e 指向事件数据的指针
- */
-static void button_1_event_handler(lv_event_t *e)
+// --- 设备状态管理结构 ---
+typedef struct
 {
-    // 在此处添加按钮1的事件处理逻辑
-    // LV_UNUSED(e); // 如果'e'未被使用，可以取消注释以抑制编译器警告
-    printf(" 按钮 1  被点击\n\r");
+    char device_id[32];       // 设备ID
+    uint32_t last_heartbeat;  // 上次心跳时间(HAL_GetTick())
+    bool is_online;           // 在线状态
+    lv_obj_t *indicator_obj;  // 指示器对象(用于改变颜色)
+    lv_obj_t *label_obj;      // 标签对象(显示状态文本)
+} DeviceStatus_t;
+
+#define DEVICE_COUNT 4
+#define DEVICE_TIMEOUT_MS 3000 // 3秒超时
+
+// 初始化设备列表
+static DeviceStatus_t devices[DEVICE_COUNT] = {
+    {.device_id = "device_001", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_002", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_003", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_004", .is_online = false, .last_heartbeat = 0}
+};
+
+static lv_timer_t *device_check_timer = NULL;
+
+// --- 内部辅助函数 ---
+
+/**
+ * @brief 更新单个设备的UI显示状态
+ */
+static void update_device_ui(int idx)
+{
+    if (idx < 0 || idx >= DEVICE_COUNT) return;
+    DeviceStatus_t *dev = &devices[idx];
+    if (!dev->indicator_obj || !dev->label_obj) return;
+
+    if (dev->is_online)
+    {
+        // 活跃：橙色 (0xFFA500)
+        lv_obj_set_style_bg_color(dev->indicator_obj, lv_color_hex(0xFFA500), 0);
+        lv_label_set_text_fmt(dev->label_obj, "%s: On", dev->device_id);
+    }
+    else
+    {
+        // 下线：灰色 (0x808080)
+        lv_obj_set_style_bg_color(dev->indicator_obj, lv_color_hex(0x808080), 0);
+        lv_label_set_text_fmt(dev->label_obj, "%s: Off", dev->device_id);
+    }
 }
 
 /**
- * @brief 按钮2点击事件处理函数
- *
- * @param e 指向事件数据的指针
+ * @brief 定时器回调：检查设备超时
  */
-static void button_2_event_handler(lv_event_t *e)
+static void device_check_timer_cb(lv_timer_t *t)
 {
-    // 在此处添加按钮2的事件处理逻辑
+    uint32_t now = HAL_GetTick();
+    for (int i = 0; i < DEVICE_COUNT; i++)
+    {
+        // 如果当前是在线，且距离上次心跳超过超时时间，则设为下线
+        if (devices[i].is_online && (now - devices[i].last_heartbeat > DEVICE_TIMEOUT_MS))
+        {
+            devices[i].is_online = false;
+            update_device_ui(i);
+        }
+    }
 }
 
 /**
- * @brief 按钮3点击事件处理函数
- *
- * @param e 指向事件数据的指针
+ * @brief 解析设备状态JSON并更新 (供外部调用)
+ * JSON示例: {"device_id": "device_001", "status": "active"} 
+ * 或者status为数字，具体根据实际协议调整
  */
-static void button_3_event_handler(lv_event_t *e)
+void Parse_Device_Status_JSON(const char *json)
 {
-    // 在此处添加按钮3的事件处理逻辑
+    if (!json) return;
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return;
+
+    cJSON *id_item = cJSON_GetObjectItem(root, "device_id");
+    cJSON *status_item = cJSON_GetObjectItem(root, "status"); // 假设键名为 "status"
+    // 兼容 "state" 键名
+    if (!status_item) status_item = cJSON_GetObjectItem(root, "state");
+
+    if (cJSON_IsString(id_item) && (id_item->valuestring != NULL))
+    {
+        for (int i = 0; i < DEVICE_COUNT; i++)
+        {
+            if (strcmp(devices[i].device_id, id_item->valuestring) == 0)
+            {
+                // 找到对应设备，更新心跳
+                devices[i].last_heartbeat = HAL_GetTick();
+                
+                // 解析状态
+                bool new_status = true; // 默认为在线
+                if (status_item)
+                {
+                   // 根据status内容判断，这里假设只要收到且非明确"offline"/"0"即活跃
+                   if (cJSON_IsString(status_item)) {
+                       if (strcmp(status_item->valuestring, "offline") == 0 || strcmp(status_item->valuestring, "0") == 0)
+                           new_status = false;
+                   } else if (cJSON_IsNumber(status_item)) {
+                       if (status_item->valueint == 0)
+                           new_status = false;
+                   }
+                }
+
+                bool status_changed = (devices[i].is_online != new_status);
+                devices[i].is_online = new_status;
+                
+                // 如果状态改变或UI未初始化(首次更新)，刷新UI
+                if (status_changed || devices[i].indicator_obj) {
+                    update_device_ui(i);
+                }
+                break;
+            }
+        }
+    }
+
+    cJSON_Delete(root);
 }
 
+// --- 设备监控屏幕的刷新回调(从 My_Data 整合设备状态) ---
 /**
- * @brief 按钮4点击事件处理函数
- *
- * @param e 指向事件数据的指针
+ * @brief 从 My_Data 模块获取设备状态并更新UI
+ * 此回调定期调用以同步来自 My_Data 的设备检测数据到UI显示
  */
-static void button_4_event_handler(lv_event_t *e)
+static void sync_device_status_from_data(lv_timer_t *t)
 {
-    // 在此处添加按钮4的事件处理逻辑
+    // 遍历设备列表，从 My_Data 的 device_status_list 同步状态
+    // 这允许 My_Data 作为数据源，UI 作为显示层
+    
+    for (int i = 0; i < DEVICE_COUNT && i < MAX_DEVICE_STATUS; i++)
+    {
+        // 检查 My_Data 中是否有该索引的设备状态数据
+        if (device_status_list[i].valid)
+        {
+            // 根据 device_status_list 中的状态判断在线状态
+            bool is_online = Is_Device_Online(device_status_list[i].id);
+            
+            // 修复：只要检测到在线，就刷新心跳时间，防止本地检测误判为超时
+            if (is_online)
+            {
+                devices[i].last_heartbeat = HAL_GetTick();
+            }
+
+            // 如果状态改变，更新显示
+            if (devices[i].is_online != is_online)
+            {
+                devices[i].is_online = is_online;
+                // devices[i].last_heartbeat = HAL_GetTick(); // 已移到上方统一更新
+                if (devices[i].indicator_obj && devices[i].label_obj)
+                {
+                    update_device_ui(i);
+                    printf("Device %d status synced from My_Data: %s\r\n", 
+                           i, is_online ? "online" : "offline");
+                }
+            }
+        }
+    }
 }
 
+// --- 创建屏幕2函数 (设备状态监控) ---
 /**
- * @brief 开关1值改变事件处理函数
- *
- * @param e 指向事件数据的指针
- */
-static void switch_1_event_handler(lv_event_t *e)
-{
-    // 在此处添加开关1的事件处理逻辑
-    // 可以使用以下代码获取开关状态：
-    // lv_obj_t * sw = lv_event_get_target_obj(e);
-    // bool is_on = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    // printf("开关 1 切换: %s\n", is_on ? "ON" : "OFF");
-}
-
-/**
- * @brief 开关2值改变事件处理函数
- *
- * @param e 指向事件数据的指针
- */
-static void switch_2_event_handler(lv_event_t *e)
-{
-    // 在此处添加开关2的事件处理逻辑
-}
-
-/**
- * @brief 开关3值改变事件处理函数
- *
- * @param e 指向事件数据的指针
- */
-static void switch_3_event_handler(lv_event_t *e)
-{
-    // 在此处添加开关3的事件处理逻辑
-}
-
-/**
- * @brief 开关4值改变事件处理函数
- *
- * @param e 指向事件数据的指针
- */
-static void switch_4_event_handler(lv_event_t *e)
-{
-    // 在此处添加开关4的事件处理逻辑
-}
-
-// --- 创建屏幕2函数 ---
-/**
- * @brief 创建屏幕2及其内容
- *
- * 此函数构建屏幕2的UI，展示按钮和开关控件。
+ * @brief 创建设备监控屏幕并整合 My_Data 的设备检测功能
+ * 
+ * 此屏幕展示多个设备的在线/离线状态，显示最近的心跳时间等信息。
+ * 与 My_Data 模块集成以获取设备检测数据。
  */
 void create_screen_2(void)
 {
@@ -561,108 +732,69 @@ void create_screen_2(void)
 
     // 添加标题标签
     lv_obj_t *title = lv_label_create(screen_2);
-    lv_label_set_text(title, "按钮与开关");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5); // 将标题放置在顶部中央
+    lv_label_set_text(title, "设备监控");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
     // 添加返回按钮
     lv_obj_t *back_btn = lv_button_create(screen_2);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮放置在底部中央
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回主菜单");
-    lv_obj_center(back_label);                                                         // 将标签居中放置在按钮上
-    lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
+    lv_label_set_text(back_label, "返回");
+    lv_obj_center(back_label);
+    lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL);
 
     // --- 主内容容器 ---
-    // 此容器包含左侧（按钮）和右侧（开关）两个部分
     lv_obj_t *main_cont = lv_obj_create(screen_2);
-    lv_obj_set_scroll_dir(main_cont, LV_DIR_VER); // 设置垂直滚动方向
-    // 设置容器大小：宽度为屏幕90%，高度为屏幕高度减去80像素
-    lv_obj_set_size(main_cont, LV_PCT(90), LV_VER_RES - 80);
-    // 将容器放置在标题下方
+    lv_obj_set_size(main_cont, LV_PCT(90), LV_VER_RES - 100);
     lv_obj_align_to(main_cont, title, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
-    // 设置为水平流式布局，用于左右分区
-    lv_obj_set_flex_flow(main_cont, LV_FLEX_FLOW_ROW);
-    // 设置子元素对齐方式
+    lv_obj_set_flex_flow(main_cont, LV_FLEX_FLOW_ROW_WRAP); // 换行布局
     lv_obj_set_flex_align(main_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // 可选：移除主容器的默认边框和内边距
-    lv_obj_set_style_border_width(main_cont, 0, 0);
-    lv_obj_set_style_pad_all(main_cont, 0, 0);
-
-    // --- 左侧容器用于放置按钮 ---
-    lv_obj_t *left_cont = lv_obj_create(main_cont);
-    lv_obj_set_size(left_cont, LV_PCT(50), LV_PCT(100)); // 设置宽度为50%，高度为100%
-    // 设置为垂直流式布局，用于按钮排列
-    lv_obj_set_flex_flow(left_cont, LV_FLEX_FLOW_COLUMN);
-    // 设置子元素对齐方式
-    lv_obj_set_flex_align(left_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // 可选：移除左侧容器的默认边框和内边距
-    lv_obj_set_style_border_width(left_cont, 0, 0);
-    lv_obj_set_style_pad_all(left_cont, 0, 0);
-
-    // --- 右侧容器用于放置开关 ---
-    lv_obj_t *right_cont = lv_obj_create(main_cont);
-    lv_obj_set_size(right_cont, LV_PCT(50), LV_PCT(100)); // 设置宽度为50%，高度为100%
-    // 设置为垂直流式布局，用于开关排列
-    lv_obj_set_flex_flow(right_cont, LV_FLEX_FLOW_COLUMN);
-    // 设置子元素对齐方式
-    lv_obj_set_flex_align(right_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // 可选：移除右侧容器的默认边框和内边距
-    lv_obj_set_style_border_width(right_cont, 0, 0);
-    lv_obj_set_style_pad_all(right_cont, 0, 0);
-
-    // --- 在左侧容器中填充按钮 ---
-    // 使用数组便于管理和未来样式设置
-    lv_obj_t *buttons[4];
-    for (int i = 0; i < 4; i++)
+    
+    // 创建4个设备状态显示卡片
+    for (int i = 0; i < DEVICE_COUNT; i++)
     {
-        buttons[i] = lv_button_create(left_cont);      // 在左侧容器中创建按钮
-        lv_obj_t *label = lv_label_create(buttons[i]); // 在按钮上创建标签
-        char btn_text[20];
-        snprintf(btn_text, sizeof(btn_text), "按钮 %d", i + 1); // 格式化按钮文本
-        lv_label_set_text(label, btn_text);                     // 设置标签文本
-        lv_obj_center(label);                                   // 将标签居中放置在按钮上
+        // 卡片容器
+        lv_obj_t *card = lv_obj_create(main_cont);
+        lv_obj_set_size(card, LV_PCT(40), 80); // 宽40%，高80px
+        lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN); // 垂直布局
+        lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+        
+        // 设置卡片样式
+        lv_obj_set_style_radius(card, 8, 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(0x444444), 0);
+        lv_obj_set_style_pad_all(card, 5, 0);
+
+        // 保存卡片对象作为指示器(背景变色)
+        devices[i].indicator_obj = card;
+
+        // 设备ID标签（头部）
+        lv_obj_t *id_label = lv_label_create(card);
+        lv_label_set_text_fmt(id_label, "设备: %s", devices[i].device_id);
+        lv_obj_set_style_text_color(id_label, lv_color_hex(0xCCCCCC), 0);
+
+        // 状态标签
+        lv_obj_t *label = lv_label_create(card);
+        devices[i].label_obj = label;
+        lv_obj_set_style_text_color(label, lv_color_white(), 0); // 白色文字
+        
+        // 心跳信息标签（可选）
+        lv_obj_t *heartbeat_label = lv_label_create(card);
+        lv_label_set_text(heartbeat_label, "");
+        lv_obj_set_style_text_color(heartbeat_label, lv_color_hex(0x999999), 0);
+        
+        // 初始化显示
+        update_device_ui(i);
     }
-    // 为按钮添加事件回调
-    lv_obj_add_event_cb(buttons[0], button_1_event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(buttons[1], button_2_event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(buttons[2], button_3_event_handler, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(buttons[3], button_4_event_handler, LV_EVENT_CLICKED, NULL);
-
-    // --- 在右侧容器中填充开关和标签 ---
-    // 数组用于保存开关指针，以便添加事件回调
-    lv_obj_t *switches[4];
-    // 开关标签文本数组（每个标签4个字符）
-    const char *switch_labels[] = {"开关1", "开关2", "开关3", "开关4"};
-
-    for (int i = 0; i < 4; i++)
-    {
-        // 为每个标签+开关对创建一个容器
-        lv_obj_t *switch_item_cont = lv_obj_create(right_cont);
-        // 设置容器大小：宽度为100%（相对于right_cont），高度自适应内容
-        lv_obj_set_size(switch_item_cont, LV_PCT(100), LV_SIZE_CONTENT);
-        lv_obj_set_flex_flow(switch_item_cont, LV_FLEX_FLOW_ROW); // 设置为水平流式布局
-        // 设置子元素对齐方式：起始对齐，垂直居中
-        lv_obj_set_flex_align(switch_item_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        // 可选：移除边框
-        lv_obj_set_style_border_width(switch_item_cont, 0, 0);
-        // 可选：添加内边距
-        lv_obj_set_style_pad_all(switch_item_cont, 2, 0);
-
-        // 在项容器中创建标签
-        lv_obj_t *label = lv_label_create(switch_item_cont);
-        lv_label_set_text(label, switch_labels[i]); // 从数组中设置文本
-        lv_obj_set_width(label, 60);                // 设置标签固定宽度（假设4个中文字符）
-
-        // 在项容器中创建开关
-        switches[i] = lv_switch_create(switch_item_cont);
-        // 可选：在标签和开关之间添加一些间距
-        // lv_obj_set_style_margin_left(switches[i], 5, 0);
+    
+    // 创建并启动定时器，1秒检查一次设备超时 (避免重复创建)
+    if(device_check_timer == NULL) {
+        device_check_timer = lv_timer_create(device_check_timer_cb, 5000, NULL);
     }
-    // 为开关添加值改变事件回调
-    lv_obj_add_event_cb(switches[0], switch_1_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(switches[1], switch_2_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(switches[2], switch_3_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(switches[3], switch_4_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    
+    // 创建同步定时器，1秒从 My_Data 同步一次设备状态
+    lv_timer_create(sync_device_status_from_data, 1000, NULL);
 }
 
 // 创建屏幕3的函数
@@ -695,14 +827,13 @@ void add_data2_to_chart_screen_3(int32_t new_point2)
     lv_chart_set_next_value(chart, ser2, new_point2); // 为系列2添加数据点
 }
 
-
 // --- 创建屏幕3函数 ---
 /**
  * @brief 创建屏幕3及其内容
  *
  * 此函数构建屏幕3的UI，展示一个动态更新的折线图。
  */
-//示例代码{"ZheXian1":40,"ZheXian2":60}
+// 示例代码{"ZheXian1":40,"ZheXian2":60}
 void create_screen_3(void)
 {
     // 初始化随机数种子
@@ -721,7 +852,7 @@ void create_screen_3(void)
     lv_obj_set_width(back_btn, 180);                     // 设置按钮合理宽度
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回主菜单");
+    lv_label_set_text(back_label, "返回");
     lv_obj_center(back_label);                                                         // 将标签居中放置在按钮上
     lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
 
@@ -785,9 +916,9 @@ void create_screen_3(void)
 
 // --- 项目信息常量 (英文) ---
 static const char *PROJECT_NAME = "智能环境监测系统";                // 项目名称
-static const char *AUTHORS[] = {"张三", "李四", "王五"};             // 作者列表
+static const char *AUTHORS[] = {"夏浩然", "吴萧杨", "张生文"};             // 作者列表
 static const int NUM_AUTHORS = sizeof(AUTHORS) / sizeof(AUTHORS[0]); // 作者数量
-static const char *CREATION_TIME = "2024年10月27日";                 // 创建时间
+static const char *CREATION_TIME = "2025年10月27日";                 // 创建时间
 
 // 创建屏幕4的函数
 /**
@@ -825,7 +956,7 @@ void create_screen_4(void)
     // --- 项目名称标签 ---
     lv_obj_t *project_name_label = lv_label_create(info_container);
     // 使用格式化字符串设置项目名称
-    lv_label_set_text_fmt(project_name_label, "项目名称: %s", PROJECT_NAME);
+    lv_label_set_text_fmt(project_name_label, "设备名称: %s", PROJECT_NAME);
     lv_obj_set_style_text_font(project_name_label, &lv_font_weiruan_16, 0); // 设置字体
 
     // --- 作者标签 ---
@@ -833,7 +964,7 @@ void create_screen_4(void)
     // 动态构建作者字符串
     static char authors_text[150];  // 静态缓冲区，用于存放连接后的作者字符串
     authors_text[0] = '\0';         // 初始化为空字符串
-    strcat(authors_text, "作者: "); // 添加前缀
+    strcat(authors_text, "成员: "); // 添加前缀
     for (int i = 0; i < NUM_AUTHORS; ++i)
     {
         strcat(authors_text, AUTHORS[i]); // 添加作者名
@@ -856,7 +987,7 @@ void create_screen_4(void)
     lv_obj_set_style_pad_hor(back_btn, 20, 0);           // 为按钮添加水平内边距
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回主菜单");
+    lv_label_set_text(back_label, "返回");
     lv_obj_center(back_label);                                                         // 将标签居中放置在按钮内
     lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
 }

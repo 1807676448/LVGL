@@ -1,7 +1,7 @@
 #include "My_Data.h"
 #include <math.h>
 
-// 基础解析函数
+// 基础清除函数
 void clear_array(uint8_t *arr, size_t len)
 {
     for (size_t i = 0; i < len; i++)
@@ -10,17 +10,72 @@ void clear_array(uint8_t *arr, size_t len)
     }
 }
 
-// // 定义配置项结构体
-// typedef struct {
-//     char key[32];
-//     cJSON *value;
-//     uint8_t type; // 0:未使用, 1:整数, 2:浮点数, 3:字符串, 4:布尔值
-// } config_item_t;
-
-// // 配置存储数组
-// #define MAX_CONFIG_ITEMS 20
 static config_item_t config_items[MAX_CONFIG_ITEMS];
 static uint8_t config_count = 0;
+
+// 设备状态列表（已在 My_Data.h 中声明为 extern，这里定义全局实例）
+device_status_t device_status_list[MAX_DEVICE_STATUS];
+
+static bool is_special_key(const char *key)
+{
+    return (key && (strcmp(key, "device_id") == 0 || strcmp(key, "status") == 0));
+}
+
+static int find_device_status_index(int id)
+{
+    for (int i = 0; i < MAX_DEVICE_STATUS; i++)
+    {
+        if (device_status_list[i].valid && device_status_list[i].id == id)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void update_device_status(int id, const char *status)
+{
+    int idx = find_device_status_index(id);
+    if (idx == -1)
+    {
+        for (int i = 0; i < MAX_DEVICE_STATUS; i++)
+        {
+            if (!device_status_list[i].valid)
+            {
+                idx = i;
+                device_status_list[i].valid = true;
+                device_status_list[i].id = id;
+                break;
+            }
+        }
+    }
+
+    if (idx != -1)
+    {
+        strncpy(device_status_list[idx].status, status, sizeof(device_status_list[idx].status) - 1);
+        device_status_list[idx].status[sizeof(device_status_list[idx].status) - 1] = '\0';
+        printf("device %d status -> %s\r\n", id, device_status_list[idx].status);
+    }
+    else
+    {
+        printf("device status table full, id=%d dropped\r\n", id);
+    }
+}
+
+static void handle_device_status(cJSON *root)
+{
+    if (!root)
+    {
+        return;
+    }
+
+    cJSON *id = cJSON_GetObjectItem(root, "device_id");
+    cJSON *status = cJSON_GetObjectItem(root, "status");
+    if (id && status && cJSON_IsNumber(id) && cJSON_IsString(status))
+    {
+        update_device_status(id->valueint, status->valuestring);
+    }
+}
 
 // 查找配置项索引
 static int find_config_index(const char *key)
@@ -35,6 +90,7 @@ static int find_config_index(const char *key)
     return -1;
 }
 
+/*--数据存储处理区--*/
 // 存储整数配置项
 void My_SendJson_Change_Int(const char *key, int value)
 {
@@ -63,7 +119,6 @@ void My_SendJson_Change_Int(const char *key, int value)
     config_items[index].value = cJSON_CreateNumber(value);
     config_items[index].type = 1;
 }
-
 // 存储浮点数配置项
 void My_SendJson_Change_Double(const char *key, double value)
 {
@@ -89,7 +144,6 @@ void My_SendJson_Change_Double(const char *key, double value)
     config_items[index].value = cJSON_CreateNumber(value);
     config_items[index].type = 2;
 }
-
 // 存储字符串配置项
 void My_SendJson_Change_String(const char *key, const char *value)
 {
@@ -115,7 +169,6 @@ void My_SendJson_Change_String(const char *key, const char *value)
     config_items[index].value = cJSON_CreateString(value);
     config_items[index].type = 3;
 }
-
 // 存储布尔值配置项
 void My_SendJson_Change_Bool(const char *key, bool value)
 {
@@ -142,7 +195,7 @@ void My_SendJson_Change_Bool(const char *key, bool value)
     config_items[index].type = 4;
 }
 
-// 通用存储函数（自动判断类型）
+// 通用存储函数（自行判断类型）
 void My_SendJson_Change(const char *key, void *value, uint8_t value_type)
 {
     switch (value_type)
@@ -238,6 +291,109 @@ void My_SendJson_Send(void)
     cJSON_Delete(root);
 }
 
+void My_SendJson_SendAll(UART_HandleTypeDef *huart)
+{
+    if (config_count == 0)
+    {
+        printf("No configuration items to send\r\n");
+        return;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+    {
+        printf("Create JSON object failed\r\n");
+        return;
+    }
+
+    for (int i = 0; i < config_count; i++)
+    {
+        if (config_items[i].value)
+        {
+            cJSON_AddItemToObject(root, config_items[i].key,
+                                  cJSON_Duplicate(config_items[i].value, 1));
+        }
+    }
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str)
+    {
+        Send_JSON_Over_UART(json_str, huart);
+        free(json_str);
+    }
+
+    cJSON_Delete(root);
+}
+
+void My_SendJson_SendKeys(const char *keys[], size_t key_count, UART_HandleTypeDef *huart)
+{
+    if (!keys || key_count == 0)
+    {
+        printf("No keys provided\r\n");
+        return;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+    {
+        printf("Create JSON object failed\r\n");
+        return;
+    }
+
+    size_t added = 0;
+    for (size_t i = 0; i < key_count; i++)
+    {
+        int idx = find_config_index(keys[i]);
+        if (idx >= 0 && config_items[idx].value)
+        {
+            cJSON_AddItemToObject(root, config_items[idx].key,
+                                  cJSON_Duplicate(config_items[idx].value, 1));
+            added++;
+        }
+    }
+
+    if (added == 0)
+    {
+        printf("No matching keys to send\r\n");
+        cJSON_Delete(root);
+        return;
+    }
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    if (json_str)
+    {
+        Send_JSON_Over_UART(json_str, huart);
+        free(json_str);
+    }
+
+    cJSON_Delete(root);
+}
+
+bool My_SendJson_QueryValue(const char *key, char *out, size_t out_len)
+{
+    if (!key || !out || out_len == 0)
+    {
+        return false;
+    }
+
+    int idx = find_config_index(key);
+    if (idx == -1 || !config_items[idx].value)
+    {
+        return false;
+    }
+
+    char *json_str = cJSON_PrintUnformatted(config_items[idx].value);
+    if (!json_str)
+    {
+        return false;
+    }
+
+    strncpy(out, json_str, out_len - 1);
+    out[out_len - 1] = '\0';
+    free(json_str);
+    return true;
+}
+
 // 打印所有存储的配置项
 extern uint64_t UNX_Now_Time;
 void My_SendJson_PrintAll(void)
@@ -317,6 +473,11 @@ static void print_object_items(cJSON *root)
     {
         const char *key = item->string ? item->string : "(null)";
 
+        if (is_special_key(key))
+        {
+            continue;
+        }
+
         switch (item->type)
         {
         case cJSON_String:
@@ -324,6 +485,7 @@ static void print_object_items(cJSON *root)
             break;
 
         case cJSON_Number:
+        {
             // 同时输出整数与浮点格式
             double raw = cJSON_GetNumberValue(item);
             int64_t as_int = (int64_t)llround(raw);
@@ -331,16 +493,17 @@ static void print_object_items(cJSON *root)
             if ((float)(item->valueint) == (item->valuedouble))
             {
                 My_SendJson_Change(key, &(item->valueint), 1);
-                update_screen1_item(key, item->valueint);
+                update_screen1_item(key, (double)item->valueint);
                 // My_SendJson_PrintAll();
             }
             else
             {
                 My_SendJson_Change(key, &(item->valuedouble), 2);
-                update_screen1_item(key, item->valueint);
+                update_screen1_item(key, item->valuedouble);
                 // My_SendJson_PrintAll();
             }
             break;
+        }
 
         case cJSON_True:
             printf("%s : true\r\n", key);
@@ -415,17 +578,13 @@ void My_cJSON_Text(void)
 
     cJSON_Delete(root); // 释放根节点
 }
-extern int16_t uart1_ins;
-extern uint8_t uart1_rx_buf[500];
-extern int16_t uart2_ins;
-extern uint8_t uart2_rx_buf[500];
+
 void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
 {
     // 如果数据以 +MQRECV 开头，找到 JSON 部分的起始位置
     char *json_start = strchr(json_data, '{');
     if (!json_start)
     {
-        // 没找到 '{', 可能是非 JSON 数据或者尚未接收完整，这里可以简易处理
         cJSON *root_raw = cJSON_Parse(json_data);
         if (!root_raw)
         {
@@ -454,14 +613,16 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
         return;
     }
 
+    handle_device_status(root);
+
     char *out = cJSON_PrintUnformatted(root);
 
     if (out && huart == &huart1)
     {
-        printf("Runtime text test!\n\r");
+        printf("Usart1 Begin!\n\r");
 
         print_object_items(root);
-        printf("RAW:%s\r\n", out);
+        // printf("RAW:%s\r\n", out);
         My_SendJson_PrintAll();
 
         free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
@@ -473,10 +634,10 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
     }
     if (out && huart == &huart2)
     {
-        printf("Runtime text test!\n\r");
+        printf("Usart2 Begin!\n\r");
 
         print_object_items(root);
-        printf("RAW:%s\r\n", out);
+        // printf("RAW:%s\r\n", out);
         My_SendJson_PrintAll();
 
         free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
@@ -485,6 +646,21 @@ void My_cJSON_Get(char *json_data, UART_HandleTypeDef *huart)
         uart2_ins = 0;
         HAL_UART_Abort_IT(&huart2);
         HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[0], 1);
+    }
+    if (out && huart == &huart3)
+    {
+        printf("Usart3 Begin!\n\r");
+
+        print_object_items(root);
+        // printf("RAW:%s\r\n", out);
+        My_SendJson_PrintAll();
+
+        free(out); // 使用 cJSON 自带的分配器时也用 free/cJSON_free
+
+        clear_array(json_data, 100);
+        uart3_ins = 0;
+        HAL_UART_Abort_IT(&huart3);
+        HAL_UART_Receive_IT(&huart3, &uart3_rx_buf[0], 1);
     }
 
     cJSON_Delete(root); // 释放根节点
@@ -610,4 +786,66 @@ void Send_JSON_Over_UART(const char *json_str, UART_HandleTypeDef *huart)
 
 void My_cJSON_Change(const char *key, const int valueint)
 {
+}
+
+/* ======================== 设备状态管理导出函数实现 ======================== */
+
+/**
+ * @brief 获取指定ID的设备状态
+ */
+device_status_t* Get_Device_Status(int id)
+{
+    for (int i = 0; i < MAX_DEVICE_STATUS; i++)
+    {
+        if (device_status_list[i].valid && device_status_list[i].id == id)
+        {
+            return &device_status_list[i];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief 获取所有有效的设备状态数量
+ */
+int Get_Valid_Device_Count(void)
+{
+    int count = 0;
+    for (int i = 0; i < MAX_DEVICE_STATUS; i++)
+    {
+        if (device_status_list[i].valid)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief 查询设备是否在线（基于设备ID）
+ */
+bool Is_Device_Online(int id)
+{
+    device_status_t *dev = Get_Device_Status(id);
+    if (!dev) return false;
+    
+    // 判断在线状态：如果 status 不是 "offline" 或 "0"，则认为在线
+    if (strcmp(dev->status, "offline") == 0 || strcmp(dev->status, "0") == 0)
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 清空所有设备状态（重置设备列表）
+ */
+void Clear_All_Device_Status(void)
+{
+    for (int i = 0; i < MAX_DEVICE_STATUS; i++)
+    {
+        device_status_list[i].valid = false;
+        device_status_list[i].id = 0;
+        device_status_list[i].status[0] = '\0';
+    }
 }

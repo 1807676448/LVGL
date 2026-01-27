@@ -19,6 +19,9 @@
 // 配置项数组最大容量（外部可能需要知晓该限制，故对外声明）
 #define MAX_CONFIG_ITEMS 50
 
+// 设备状态管理宏定义
+#define MAX_DEVICE_STATUS 8
+
 
 /* --------------------------- 结构体类型声明 --------------------------- */
 // 配置项结构体（存储 JSON 键值对及类型信息，外部可能需访问配置项属性）
@@ -28,13 +31,24 @@ typedef struct {
     uint8_t type;        // 配置项类型：0-未使用，1-整数，2-浮点数，3-字符串，4-布尔值
 } config_item_t;
 
+// 设备状态结构体（用于管理从各个设备接收到的状态信息）
+typedef struct {
+    int id;              // 设备ID
+    char status[16];     // 设备状态字符串 (如 "online", "offline", "active" 等)
+    bool valid;          // 该项是否有效（已初始化）
+} device_status_t;
+
 
 /* --------------------------- 外部变量声明 --------------------------- */
-// UART1 接收状态标志（外部文件需访问该标志判断接收状态）
 extern int16_t uart1_ins;
-
-// UART1 接收缓冲区（外部文件需访问该缓冲区获取接收的 JSON 数据）
 extern uint8_t uart1_rx_buf[500];
+extern int16_t uart2_ins;
+extern uint8_t uart2_rx_buf[500];
+extern int16_t uart3_ins;
+extern uint8_t uart3_rx_buf[500];
+
+// 设备状态列表（从 My_Data.c 导出，用于UI层访问设备状态数据）
+extern device_status_t device_status_list[MAX_DEVICE_STATUS];
 
 
 /* --------------------------- 基础工具函数声明 --------------------------- */
@@ -102,6 +116,27 @@ uint8_t My_SendJson_GetCount(void);
 void My_SendJson_Send(void);
 
 /**
+ * @brief 将当前所有存储的配置项序列化并通过指定串口发送
+ */
+void My_SendJson_SendAll(UART_HandleTypeDef *huart);
+
+/**
+ * @brief 仅发送指定键名列表对应的配置项
+ * @param keys: 需要发送的键名数组
+ * @param key_count: 键名数量
+ */
+void My_SendJson_SendKeys(const char *keys[], size_t key_count, UART_HandleTypeDef *huart);
+
+/**
+ * @brief 查询指定键名对应的值（序列化为字符串返回）
+ * @param key: 目标键名
+ * @param out: 输出缓冲区
+ * @param out_len: 输出缓冲区长度
+ * @return 查询成功返回 true，未找到或序列化失败返回 false
+ */
+bool My_SendJson_QueryValue(const char *key, char *out, size_t out_len);
+
+/**
  * @brief 打印所有存储的配置项（调试用，输出键名、值、类型到控制台）
  */
 void My_SendJson_PrintAll(void);
@@ -138,6 +173,33 @@ static void print_object_items(cJSON *root);
 
 void ConfigData_SendJSON(UART_HandleTypeDef *huart);
 void Send_JSON_Over_UART(const char *json_str, UART_HandleTypeDef *huart);
+
+
+/* --------------------------- 设备检测与状态管理函数声明 --------------------------- */
+/**
+ * @brief 获取指定ID的设备状态
+ * @param id: 设备ID
+ * @return 指向 device_status_t 的指针，如果未找到返回 NULL
+ */
+device_status_t* Get_Device_Status(int id);
+
+/**
+ * @brief 获取所有有效的设备状态数量
+ * @return 有效设备数量
+ */
+int Get_Valid_Device_Count(void);
+
+/**
+ * @brief 查询设备是否在线（基于设备ID）
+ * @param id: 设备ID
+ * @return true 如果设备在线，false 否则
+ */
+bool Is_Device_Online(int id);
+
+/**
+ * @brief 清空所有设备状态（重置设备列表）
+ */
+void Clear_All_Device_Status(void);
 
 
 #endif  // MY_JSON_UTILS_H

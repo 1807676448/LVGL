@@ -24,10 +24,14 @@ void setup_ui(void);
 
 //接口函数声明
 void update_main_screen_info(const char *new_time, const char *new_date, const char *new_weather, const char *new_welcome_msg);
-int update_screen1_item(const char *name, int value);
+int update_screen1_item(const char *name, double value);
 //示例代码 {"TDS": 50,"COD": 1,"TOC": 2,"UV254": 3,"pH": 4,"Tem": 5,"Hum": 6}
 void add_data1_to_chart_screen_3(int32_t new_point1);
 void add_data2_to_chart_screen_3(int32_t new_point2);
+
+// 解析串口JSON并更新设备状态
+// JSON格式示例: {"device_id": "device_001", "status": "active"} //或 1
+void Parse_Device_Status_JSON(const char *json);
 
 
 //外部变量声明
