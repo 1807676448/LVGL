@@ -37,6 +37,7 @@ virtualFolder:
                 - path: ../Core/Src/Touch.c
                 - path: ../Core/Src/My_Data.c
                 - path: ../Core/Src/cJSON.c
+                - path: ../Core/Src/My_Data_New.c
               folders: []
     - name: Drivers
       files: []
@@ -108,6 +109,7 @@ targets:
       - ../Core/lvgl/examples/scroll
       - ../Core/lvgl/examples/styles
       - ../Core/lvgl/examples
+      - <virtual_root>/Application/User/Core/My_Data.c
     toolchain: AC6
     toolchainConfigMap:
       AC6:

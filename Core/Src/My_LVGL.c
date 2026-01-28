@@ -7,40 +7,40 @@
 
 /* ===== 数据显示范围宏定义 ===== */
 // 水质相关参数
-#define TDS_MIN         0
-#define TDS_MAX         1000
-#define COD_MIN         0
-#define COD_MAX         100
-#define TOC_MIN         0
-#define TOC_MAX         100
-#define UV254_MIN       0
-#define UV254_MAX       100
-#define PH_MIN          0
-#define PH_MAX          14
+#define TDS_MIN 0
+#define TDS_MAX 1000
+#define COD_MIN 0
+#define COD_MAX 100
+#define TOC_MIN 0
+#define TOC_MAX 100
+#define UV254_MIN 0
+#define UV254_MAX 100
+#define PH_MIN 0
+#define PH_MAX 14
 
 // 温湿度相关
-#define TEM_MIN         -40
-#define TEM_MAX         85
-#define HUM_MIN         0
-#define HUM_MAX         100
-#define AIR_TEMP_MIN    -40
-#define AIR_TEMP_MAX    85
-#define AIR_HUM_MIN     0
-#define AIR_HUM_MAX     100
+#define TEM_MIN -40
+#define TEM_MAX 85
+#define HUM_MIN 0
+#define HUM_MAX 100
+#define AIR_TEMP_MIN -40
+#define AIR_TEMP_MAX 85
+#define AIR_HUM_MIN 0
+#define AIR_HUM_MAX 100
 
 // 气象相关
-#define PRESSURE_MIN    900
-#define PRESSURE_MAX    1100
-#define ALTITUDE_MIN    -500
-#define ALTITUDE_MAX    5000
-#define TUR_MIN         0
-#define TUR_MAX         3000
+#define PRESSURE_MIN 900
+#define PRESSURE_MAX 1100
+#define ALTITUDE_MIN -500
+#define ALTITUDE_MAX 5000
+#define TUR_MIN 0
+#define TUR_MAX 3000
 
 /* ===== 数据显示格式宏定义 ===== */
-#define DISPLAY_FORMAT_INT      "%d"
-#define DISPLAY_FORMAT_FLOAT_1  "%.1f"
-#define DISPLAY_FORMAT_FLOAT_2  "%.2f"
-#define DISPLAY_FORMAT_FLOAT_3  "%.3f"
+#define DISPLAY_FORMAT_INT "%d"
+#define DISPLAY_FORMAT_FLOAT_1 "%.1f"
+#define DISPLAY_FORMAT_FLOAT_2 "%.2f"
+#define DISPLAY_FORMAT_FLOAT_3 "%.3f"
 
 /**
  * @brief LVGL显示刷新回调函数
@@ -286,7 +286,7 @@ void create_main_screen(void)
     lv_obj_set_style_pad_all(right_cont, 10, 0);     // 添加内边距
 
     // --- 在左侧容器中创建按钮 ---
-    lv_obj_t *buttons[4];                                                                   // 按钮对象数组
+    lv_obj_t *buttons[4];                                                      // 按钮对象数组
     const char *button_labels[] = {"水质数据", "设备开关", "折线图", "About"}; // 按钮标签
 
     for (int i = 0; i < 4; i++)
@@ -351,18 +351,17 @@ typedef struct
 
 /* ===== 各项数据的配置 ===== */
 static const DataItemConfig_t item_configs[SCREEN1_ITEM_TOTAL] = {
-    {"TDS",       TDS_MIN,       TDS_MAX,       DISPLAY_FORMAT_FLOAT_2},
-    {"COD",       COD_MIN,       COD_MAX,       DISPLAY_FORMAT_INT},
-    {"TOC",       TOC_MIN,       TOC_MAX,       DISPLAY_FORMAT_INT},
-    {"UV254",     UV254_MIN,     UV254_MAX,     DISPLAY_FORMAT_FLOAT_2},
-    {"pH",        PH_MIN,        PH_MAX,        DISPLAY_FORMAT_FLOAT_1},
-    {"Tem",       TEM_MIN,       TEM_MAX,       DISPLAY_FORMAT_FLOAT_1},
-    // {"Hum",       HUM_MIN,       HUM_MAX,       DISPLAY_FORMAT_FLOAT_1},
-    {"Tur",       TUR_MIN,       TUR_MAX,       DISPLAY_FORMAT_FLOAT_2},
-    {"air_temp",  AIR_TEMP_MIN,  AIR_TEMP_MAX,  DISPLAY_FORMAT_FLOAT_1},
-    {"air_hum",   AIR_HUM_MIN,   AIR_HUM_MAX,   DISPLAY_FORMAT_FLOAT_1},
-    {"pressure",  PRESSURE_MIN,  PRESSURE_MAX,  DISPLAY_FORMAT_FLOAT_1},
-    {"altitude",  ALTITUDE_MIN,  ALTITUDE_MAX,  DISPLAY_FORMAT_FLOAT_1},
+    {"TDS", TDS_MIN, TDS_MAX, DISPLAY_FORMAT_FLOAT_2},
+    {"COD", COD_MIN, COD_MAX, DISPLAY_FORMAT_FLOAT_2},
+    {"TOC", TOC_MIN, TOC_MAX, DISPLAY_FORMAT_FLOAT_2},
+    {"UV254", UV254_MIN, UV254_MAX, DISPLAY_FORMAT_FLOAT_2},
+    {"pH", PH_MIN, PH_MAX, DISPLAY_FORMAT_FLOAT_1},
+    {"Tem", TEM_MIN, TEM_MAX, DISPLAY_FORMAT_FLOAT_1},
+    {"Tur", TUR_MIN, TUR_MAX, DISPLAY_FORMAT_FLOAT_2},
+    {"air_temp", AIR_TEMP_MIN, AIR_TEMP_MAX, DISPLAY_FORMAT_FLOAT_1},
+    {"air_hum", AIR_HUM_MIN, AIR_HUM_MAX, DISPLAY_FORMAT_FLOAT_1},
+    {"pressure", PRESSURE_MIN, PRESSURE_MAX, DISPLAY_FORMAT_FLOAT_1},
+    {"altitude", ALTITUDE_MIN, ALTITUDE_MAX, DISPLAY_FORMAT_FLOAT_1},
 };
 
 static screen1_item_t screen1_items[SCREEN1_ITEM_TOTAL];
@@ -390,7 +389,7 @@ int update_screen1_item(const char *name, double value)
             break;
         }
     }
-    
+
     if (config_idx == -1)
         return 1; // 未找到配置
 
@@ -506,23 +505,23 @@ void create_screen_1(void)
         // 数值标签（从My_Data查询初始值）
         char value_text[32];
         double value_double = 0.0;
-        
-        if (My_SendJson_QueryValue(names[i], value_text, sizeof(value_text)))
-        {
-            // 查询成功，移除JSON引号并转换为数字
-            if (value_text[0] == '"')
-            {
-                memmove(value_text, value_text + 1, strlen(value_text));
-                char *last_quote = strchr(value_text, '"');
-                if (last_quote)
-                    *last_quote = '\0';
-            }
-            value_double = atof(value_text);
-        }
-        
+
+        // if (My_SendJson_QueryValue(names[i], value_text, sizeof(value_text)))
+        // {
+        //     // 查询成功，移除JSON引号并转换为数字
+        //     if (value_text[0] == '"')
+        //     {
+        //         memmove(value_text, value_text + 1, strlen(value_text));
+        //         char *last_quote = strchr(value_text, '"');
+        //         if (last_quote)
+        //             *last_quote = '\0';
+        //     }
+        //     value_double = atof(value_text);
+        // }
+
         // 使用配置的格式显示数值
         snprintf(value_text, sizeof(value_text), item_configs[i].display_format, value_double);
-        
+
         lv_obj_t *value_label = lv_label_create(item_cont);
         lv_label_set_text(value_label, value_text);
         lv_obj_set_width(value_label, 80);
@@ -530,14 +529,14 @@ void create_screen_1(void)
         // 条形图：使用配置中的范围
         lv_obj_t *bar = lv_bar_create(item_cont);
         lv_bar_set_range(bar, item_configs[i].range_min, item_configs[i].range_max);
-        
+
         // 设置初始值（用数值中点作为演示，或者取查询到的值）
         int bar_value = (item_configs[i].range_min + item_configs[i].range_max) / 2;
         if (value_double >= item_configs[i].range_min && value_double <= item_configs[i].range_max)
         {
             bar_value = (int)value_double;
         }
-        
+
         lv_bar_set_value(bar, bar_value, LV_ANIM_OFF);
         lv_obj_set_flex_grow(bar, 1);
         lv_obj_add_style(bar, &bar_bg_style, LV_PART_MAIN);
@@ -562,11 +561,11 @@ extern void back_to_main_event_handler(lv_event_t *e); // 声明返回主菜单�
 // --- 设备状态管理结构 ---
 typedef struct
 {
-    char device_id[32];       // 设备ID
-    uint32_t last_heartbeat;  // 上次心跳时间(HAL_GetTick())
-    bool is_online;           // 在线状态
-    lv_obj_t *indicator_obj;  // 指示器对象(用于改变颜色)
-    lv_obj_t *label_obj;      // 标签对象(显示状态文本)
+    char device_id[32];      // 设备ID
+    uint32_t last_heartbeat; // 上次心跳时间(HAL_GetTick())
+    bool is_online;          // 在线状态
+    lv_obj_t *indicator_obj; // 指示器对象(用于改变颜色)
+    lv_obj_t *label_obj;     // 标签对象(显示状态文本)
 } DeviceStatus_t;
 
 #define DEVICE_COUNT 4
@@ -577,8 +576,7 @@ static DeviceStatus_t devices[DEVICE_COUNT] = {
     {.device_id = "device_001", .is_online = false, .last_heartbeat = 0},
     {.device_id = "device_002", .is_online = false, .last_heartbeat = 0},
     {.device_id = "device_003", .is_online = false, .last_heartbeat = 0},
-    {.device_id = "device_004", .is_online = false, .last_heartbeat = 0}
-};
+    {.device_id = "device_004", .is_online = false, .last_heartbeat = 0}};
 
 static lv_timer_t *device_check_timer = NULL;
 
@@ -587,11 +585,13 @@ static lv_timer_t *device_check_timer = NULL;
 /**
  * @brief 更新单个设备的UI显示状态
  */
-static void update_device_ui(int idx)
+void update_device_ui(int idx)
 {
-    if (idx < 0 || idx >= DEVICE_COUNT) return;
+    if (idx < 0 || idx >= DEVICE_COUNT)
+        return;
     DeviceStatus_t *dev = &devices[idx];
-    if (!dev->indicator_obj || !dev->label_obj) return;
+    if (!dev->indicator_obj || !dev->label_obj)
+        return;
 
     if (dev->is_online)
     {
@@ -618,65 +618,10 @@ static void device_check_timer_cb(lv_timer_t *t)
         // 如果当前是在线，且距离上次心跳超过超时时间，则设为下线
         if (devices[i].is_online && (now - devices[i].last_heartbeat > DEVICE_TIMEOUT_MS))
         {
-            devices[i].is_online = false;
-            update_device_ui(i);
+            devices[i].is_online = false;  
         }
+        update_device_ui(i);
     }
-}
-
-/**
- * @brief 解析设备状态JSON并更新 (供外部调用)
- * JSON示例: {"device_id": "device_001", "status": "active"} 
- * 或者status为数字，具体根据实际协议调整
- */
-void Parse_Device_Status_JSON(const char *json)
-{
-    if (!json) return;
-
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return;
-
-    cJSON *id_item = cJSON_GetObjectItem(root, "device_id");
-    cJSON *status_item = cJSON_GetObjectItem(root, "status"); // 假设键名为 "status"
-    // 兼容 "state" 键名
-    if (!status_item) status_item = cJSON_GetObjectItem(root, "state");
-
-    if (cJSON_IsString(id_item) && (id_item->valuestring != NULL))
-    {
-        for (int i = 0; i < DEVICE_COUNT; i++)
-        {
-            if (strcmp(devices[i].device_id, id_item->valuestring) == 0)
-            {
-                // 找到对应设备，更新心跳
-                devices[i].last_heartbeat = HAL_GetTick();
-                
-                // 解析状态
-                bool new_status = true; // 默认为在线
-                if (status_item)
-                {
-                   // 根据status内容判断，这里假设只要收到且非明确"offline"/"0"即活跃
-                   if (cJSON_IsString(status_item)) {
-                       if (strcmp(status_item->valuestring, "offline") == 0 || strcmp(status_item->valuestring, "0") == 0)
-                           new_status = false;
-                   } else if (cJSON_IsNumber(status_item)) {
-                       if (status_item->valueint == 0)
-                           new_status = false;
-                   }
-                }
-
-                bool status_changed = (devices[i].is_online != new_status);
-                devices[i].is_online = new_status;
-                
-                // 如果状态改变或UI未初始化(首次更新)，刷新UI
-                if (status_changed || devices[i].indicator_obj) {
-                    update_device_ui(i);
-                }
-                break;
-            }
-        }
-    }
-
-    cJSON_Delete(root);
 }
 
 // --- 设备监控屏幕的刷新回调(从 My_Data 整合设备状态) ---
@@ -688,33 +633,19 @@ static void sync_device_status_from_data(lv_timer_t *t)
 {
     // 遍历设备列表，从 My_Data 的 device_status_list 同步状态
     // 这允许 My_Data 作为数据源，UI 作为显示层
-    
-    for (int i = 0; i < DEVICE_COUNT && i < MAX_DEVICE_STATUS; i++)
+
+    for (int i = 0; i < DEVICE_COUNT; i++)
     {
         // 检查 My_Data 中是否有该索引的设备状态数据
-        if (device_status_list[i].valid)
+        if (device_list[i].valid)
         {
-            // 根据 device_status_list 中的状态判断在线状态
-            bool is_online = Is_Device_Online(device_status_list[i].id);
-            
-            // 修复：只要检测到在线，就刷新心跳时间，防止本地检测误判为超时
-            if (is_online)
-            {
-                devices[i].last_heartbeat = HAL_GetTick();
-            }
-
-            // 如果状态改变，更新显示
-            if (devices[i].is_online != is_online)
-            {
-                devices[i].is_online = is_online;
-                // devices[i].last_heartbeat = HAL_GetTick(); // 已移到上方统一更新
-                if (devices[i].indicator_obj && devices[i].label_obj)
-                {
-                    update_device_ui(i);
-                    printf("Device %d status synced from My_Data: %s\r\n", 
-                           i, is_online ? "online" : "offline");
-                }
-            }
+            // 信息传递与状态改变
+            devices[i].last_heartbeat = HAL_GetTick();
+            devices[i].is_online = true;
+            device_list[i].valid = false;
+            update_device_ui(i);
+            //Debug监控接口
+            // printf("Device %d status synced from My_Data: On\r\n",i);
         }
     }
 }
@@ -722,7 +653,7 @@ static void sync_device_status_from_data(lv_timer_t *t)
 // --- 创建屏幕2函数 (设备状态监控) ---
 /**
  * @brief 创建设备监控屏幕并整合 My_Data 的设备检测功能
- * 
+ *
  * 此屏幕展示多个设备的在线/离线状态，显示最近的心跳时间等信息。
  * 与 My_Data 模块集成以获取设备检测数据。
  */
@@ -749,17 +680,17 @@ void create_screen_2(void)
     lv_obj_align_to(main_cont, title, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
     lv_obj_set_flex_flow(main_cont, LV_FLEX_FLOW_ROW_WRAP); // 换行布局
     lv_obj_set_flex_align(main_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    
+
     // 创建4个设备状态显示卡片
     for (int i = 0; i < DEVICE_COUNT; i++)
     {
         // 卡片容器
         lv_obj_t *card = lv_obj_create(main_cont);
-        lv_obj_set_size(card, LV_PCT(40), 80); // 宽40%，高80px
+        lv_obj_set_size(card, LV_PCT(40), 80);           // 宽40%，高80px
         lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN); // 垂直布局
         lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-        
+
         // 设置卡片样式
         lv_obj_set_style_radius(card, 8, 0);
         lv_obj_set_style_border_width(card, 1, 0);
@@ -772,27 +703,23 @@ void create_screen_2(void)
         // 设备ID标签（头部）
         lv_obj_t *id_label = lv_label_create(card);
         lv_label_set_text_fmt(id_label, "设备: %s", devices[i].device_id);
-        lv_obj_set_style_text_color(id_label, lv_color_hex(0xCCCCCC), 0);
+        lv_obj_set_style_text_color(id_label, lv_color_hex(0xFFFFFF), 0);
 
         // 状态标签
         lv_obj_t *label = lv_label_create(card);
         devices[i].label_obj = label;
         lv_obj_set_style_text_color(label, lv_color_white(), 0); // 白色文字
-        
-        // 心跳信息标签（可选）
-        lv_obj_t *heartbeat_label = lv_label_create(card);
-        lv_label_set_text(heartbeat_label, "");
-        lv_obj_set_style_text_color(heartbeat_label, lv_color_hex(0x999999), 0);
-        
+
         // 初始化显示
         update_device_ui(i);
     }
-    
-    // 创建并启动定时器，1秒检查一次设备超时 (避免重复创建)
-    if(device_check_timer == NULL) {
-        device_check_timer = lv_timer_create(device_check_timer_cb, 5000, NULL);
+
+    // 创建并启动定时器，5秒检查一次设备超时 (避免重复创建)
+    if (device_check_timer == NULL)
+    {
+        device_check_timer = lv_timer_create(device_check_timer_cb, DeviceHeartTime, NULL);
     }
-    
+
     // 创建同步定时器，1秒从 My_Data 同步一次设备状态
     lv_timer_create(sync_device_status_from_data, 1000, NULL);
 }
@@ -916,7 +843,7 @@ void create_screen_3(void)
 
 // --- 项目信息常量 (英文) ---
 static const char *PROJECT_NAME = "智能环境监测系统";                // 项目名称
-static const char *AUTHORS[] = {"夏浩然", "吴萧杨", "张生文"};             // 作者列表
+static const char *AUTHORS[] = {"夏浩然", "吴萧杨", "张生文"};       // 作者列表
 static const int NUM_AUTHORS = sizeof(AUTHORS) / sizeof(AUTHORS[0]); // 作者数量
 static const char *CREATION_TIME = "2025年10月27日";                 // 创建时间
 

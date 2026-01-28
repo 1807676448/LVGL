@@ -32,7 +32,7 @@
 #include "My_Debug.h"
 #include "My_LVGL.h"
 #include "My_Data.h"
-
+#include "My_Data_New.h"
 #include <time.h>
 /* USER CODE END Includes */
 
@@ -67,7 +67,7 @@ static void MPU_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
-#define SendData_Time 15000                                // 每30s发送一次水质数据
+#define SendData_Time 1000                                 // 每30s发送一次水质数据
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
 AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第二帧缓冲区
@@ -75,13 +75,14 @@ AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第�
 void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
 
 uint8_t uart1_rx_buf[500]; // 接收缓冲区
-int16_t uart1_ins = 0;
+int16_t uart1_ins;
 uint8_t uart2_rx_buf[500]; // 接收缓冲区
-int16_t uart2_ins = 0;
+int16_t uart2_ins;
 uint8_t uart3_rx_buf[500]; // 接收缓冲区
-int16_t uart3_ins = 0;
+int16_t uart3_ins;
 
 uint64_t UNX_Now_Time = 0; // 当前时间戳
+static const char *keys[] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
 
 /* USER CODE END 0 */
 
@@ -145,12 +146,12 @@ int main(void)
   HAL_UART_Receive_IT(&huart2, uart2_rx_buf, 1);
   HAL_UART_Receive_IT(&huart3, uart3_rx_buf, 1);
 
-  My_cJSON_Text();
+  // My_cJSON_Text();
 
   LCD_Init(); // 初始化LCD
   TP_Init();
 
-  Send_JSON_Over_UART("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
+  Send_JSON("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
 
   lv_init(); // 初始化LVGL
 
@@ -170,6 +171,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   static char buffer[50];
+  extern config_item_t config_items[MAX_CONFIG_ITEMS];
 
   while (1)
   {
@@ -178,20 +180,14 @@ int main(void)
     /* USER CODE BEGIN 3 */
     lv_timer_handler();
     HAL_Delay(5);
-    My_cJSON_Get((char *)uart1_rx_buf, &huart1);
-    My_cJSON_Get((char *)uart2_rx_buf, &huart2);
-    My_cJSON_Get((char *)uart3_rx_buf, &huart3);
-    if (UNX_Now_Time > 0)
-    {
-      time_t t = (time_t)(UNX_Now_Time / 1000 + 28800); // 转为秒并调整为北京时间
-      struct tm *lt = localtime(&t);
-      char time_str[10];
-      strftime(time_str, sizeof(time_str), "%H:%M:%S", lt);
-      char date_str[12];
-      strftime(date_str, sizeof(date_str), "%Y-%m-%d", lt);
-      update_main_screen_info(time_str, date_str, NULL, "Hello, User!");
-    }
-    
+
+    TimeChange();
+
+    N_My_JsonGet((char *)uart1_rx_buf, &huart1);
+    N_My_JsonGet((char *)uart2_rx_buf, &huart2);
+    N_My_JsonGet((char *)uart3_rx_buf, &huart3);
+
+    // HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -269,15 +265,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   {
     times++;
     if (times % SendData_Time == 0)
-    { // 每30000ms发送一次水质数据
+    {
       printf("Send water quality data\r\n");
-      // ConfigData_SendJSON(&huart1);//检修用huart1发送数据
-      ConfigData_SendJSON(&huart2); // 服务器用huart2发送数据
+      // Send_JSON_KeyValue(keys, 11, &huart1);
+      Send_JSON_KeyValue(keys, 11, &huart2);
     }
-    if (times % 10000 == 10)
-    { // 每6000000ms请求一次时间戳,约1小时
-      printf("Request time stamp\r\n");
-      Send_JSON_Over_UART("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
+    if (times % 10000 == 123)
+    {
+      printf("Request time stamp\r\n\r\n");
+      Send_JSON("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
     }
   }
 }

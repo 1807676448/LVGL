@@ -14,6 +14,9 @@
 #include "My_Debug.h"
 #include "Touch.h"
 #include "My_Data.h"
+#include "My_Data_New.h"
+
+#define DeviceHeartTime 30000 //设备心跳时间30秒
 
 //控制函数
 void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
@@ -33,8 +36,8 @@ void add_data2_to_chart_screen_3(int32_t new_point2);
 // JSON格式示例: {"device_id": "device_001", "status": "active"} //或 1
 void Parse_Device_Status_JSON(const char *json);
 
+void update_device_ui(int idx);
 
 //外部变量声明
-
 
 #endif
