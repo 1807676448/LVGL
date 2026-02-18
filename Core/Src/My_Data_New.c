@@ -1,4 +1,103 @@
 #include "My_Data_New.h"
+
+static int parse_device_id_number(const cJSON *id)
+{
+    if (id == NULL)
+        return -1;
+
+    if (cJSON_IsNumber(id))
+        return id->valueint;
+
+    if (cJSON_IsString(id) && id->valuestring != NULL)
+    {
+        const char *p = id->valuestring;
+        while (*p != '\0' && !isdigit((unsigned char)*p))
+        {
+            p++;
+        }
+        if (*p != '\0')
+        {
+            return atoi(p);
+        }
+    }
+    return -1;
+}
+
+static bool g_time_synced = false;
+
+static void reset_uart_rx(UART_HandleTypeDef *usart)
+{
+    if (usart == &huart1)
+    {
+        memset(uart1_rx_buf, 0, sizeof(uart1_rx_buf));
+        uart1_ins = 0;
+        HAL_UART_Abort_IT(&huart1);
+        HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
+    }
+    else if (usart == &huart2)
+    {
+        memset(uart2_rx_buf, 0, sizeof(uart2_rx_buf));
+        uart2_ins = 0;
+        HAL_UART_Abort_IT(&huart2);
+        HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[0], 1);
+    }
+    else if (usart == &huart3)
+    {
+        memset(uart3_rx_buf, 0, sizeof(uart3_rx_buf));
+        uart3_ins = 0;
+        HAL_UART_Abort_IT(&huart3);
+        HAL_UART_Receive_IT(&huart3, &uart3_rx_buf[0], 1);
+    }
+}
+
+static bool find_complete_json(char *raw, char **json_start, char **json_end)
+{
+    if (raw == NULL || json_start == NULL || json_end == NULL)
+        return false;
+
+    char *start = strchr(raw, '{');
+    if (start == NULL)
+        return false;
+
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (char *p = start; *p != '\0'; p++)
+    {
+        char ch = *p;
+        if (escaped)
+        {
+            escaped = false;
+            continue;
+        }
+        if (ch == '\\')
+        {
+            escaped = true;
+            continue;
+        }
+        if (ch == '"')
+        {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string)
+            continue;
+
+        if (ch == '{')
+            depth++;
+        else if (ch == '}')
+            depth--;
+
+        if (depth == 0)
+        {
+            *json_start = start;
+            *json_end = p;
+            return true;
+        }
+    }
+    return false;
+}
+
 /*------<变量声明区>------*/
 // 设备状态列表
 device_status_t device_list[Device_Max] = {
@@ -105,64 +204,41 @@ void test(void)
 // Json解析
 void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
 {
-    // 查询json开头
-    char *Json_start = strchr(Json_Data, '{');
-    // 查找不成功
-    if (Json_start == NULL)
+    if (Json_Data == NULL || usart == NULL)
+        return;
+
+    char *Json_start = NULL;
+    char *Json_end = NULL;
+    if (!find_complete_json(Json_Data, &Json_start, &Json_end))
     {
-        cJSON *root = cJSON_Parse(Json_Data); // 直接解析
-        if (!root)
-        {                              // 解析失败处理
-            memset(Json_Data, 0, 500); // 清空接收缓存
-            if (usart == &huart1)
-            {
-                uart1_ins = 0;
-                // 重启接收
-                HAL_UART_Abort_IT(&huart1);
-                HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
-                // printf("USART1 Error Get Delete(N_My_JsonGet)\n\r");
-            }
-            else if (usart == &huart2)
-            {
-                uart2_ins = 0;
-                // 重启接收
-                HAL_UART_Abort_IT(&huart2);
-                HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[0], 1);
-                // printf("USART2 Error Get Delete(N_My_JsonGet)\n\r");
-            }
-            else if (usart == &huart3)
-            {
-                uart3_ins = 0;
-                // 重启接收
-                HAL_UART_Abort_IT(&huart3);
-                HAL_UART_Receive_IT(&huart3, &uart3_rx_buf[0], 1);
-                // printf("USART3 Error Get Delete(N_My_JsonGet)\n\r");
-            }
-            else
-            {
-                printf("Unknown USART Get(N_My_JsonGet)\n\r");
-            }
-            return;
-        }
-        else
-        {                           // 无{}，但解析成功
-            Json_start = Json_Data; // 完整json
-            cJSON_Delete(root);
-        }
+        return; // 半包继续等待
     }
-    printf("Json_start:%s\n\r", Json_start);
+
+    size_t json_len = (size_t)(Json_end - Json_start + 1);
+    if (json_len == 0 || json_len >= 500)
+    {
+        reset_uart_rx(usart);
+        return;
+    }
+
+    char json_buf[500] = {0};
+    memcpy(json_buf, Json_start, json_len);
+    json_buf[json_len] = '\0';
+
+    printf("Json_start:%s\n\r", json_buf);
     // 查找成功，进行解析
-    cJSON *root = cJSON_Parse(Json_start);
+    cJSON *root = cJSON_Parse(json_buf);
     if (root != NULL)
     {
         // 进行特别字符串检测 // 示例: {"device_id": 1, "status": "active"}
         cJSON *id = cJSON_GetObjectItem(root, "device_id");
         cJSON *status = cJSON_GetObjectItem(root, "status");
+        cJSON *timestamp = cJSON_GetObjectItem(root, "timestamp");
         cJSON *NowTime = cJSON_GetObjectItem(root, "NowTime");
-        if (id != NULL && status != NULL && cJSON_IsNumber(id) && cJSON_IsString(status))
+        int device_id = parse_device_id_number(id);
+        if (device_id > 0 && status != NULL && cJSON_IsString(status))
         {
             // 更新设备状态
-            int device_id = id->valueint; // device_id格式为数字
             for (int i = 0; i < Device_Max; i++)
             {
                 if (device_id == device_list[i].id)
@@ -173,17 +249,47 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
             }
             // printf("Device ID: %d, Status: %s, Is_valid: %d\r\n", device_id, status->valuestring, device_list[device_id - 1].valid);
         }
-        if (NowTime != NULL && cJSON_IsNumber(NowTime))
+        cJSON *ts_item = NULL;
+        if (timestamp != NULL)
         {
-            uint64_t ts = (uint64_t)llround(NowTime->valuedouble);
-            UNX_Now_Time = ts; // 转为毫秒
-            printf("Received timestamp: %llu\r\n", (unsigned long long)ts);
-            // 可选：更新系统时间戳等操作
+            ts_item = timestamp;
+        }
+        else if (NowTime != NULL)
+        {
+            ts_item = NowTime;
+        }
+        if (ts_item != NULL)
+        {
+            uint64_t ts = 0;
+            if (cJSON_IsNumber(ts_item))
+            {
+                ts = (uint64_t)llround(cJSON_GetNumberValue(ts_item));
+            }
+            else if (cJSON_IsString(ts_item) && ts_item->valuestring != NULL)
+            {
+                ts = strtoull(ts_item->valuestring, NULL, 10);
+            }
+
+            if (ts > 0 && ts < 1000000000000ULL)
+            {
+                ts *= 1000ULL;
+            }
+
+            if (ts >= 1600000000000ULL && ts <= 2200000000000ULL)
+            {
+                UNX_Now_Time = ts;
+                g_time_synced = true;
+                printf("Received timestamp(ms): %llu\r\n", (unsigned long long)ts);
+            }
         }
         // 数据解析
         for (cJSON *item = root->child; item != NULL; item = item->next)
         {
             const char *key = item->string ? item->string : "(null)";
+            if (strcmp(key, "timestamp") == 0 || strcmp(key, "NowTime") == 0)
+            {
+                continue;
+            }
             // 只记录数字类型，其余类型只打印，不记录
             if (item->type == cJSON_Number)
             {
@@ -206,11 +312,12 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
     else
     {
         printf("Error In Json Parse(N_My_JsonGet_1)\n\r");
+        reset_uart_rx(usart);
         return;
     }
 
-    cJSON_Delete(root);        // 释放根节点
-    memset(Json_Data, 0, 500); // 清空接收缓存
+    cJSON_Delete(root); // 释放根节点
+    reset_uart_rx(usart);
 }
 
 /*------<JSON发送函数>------*/
@@ -226,6 +333,13 @@ void Send_JSON(const char *json_str, UART_HandleTypeDef *huart)
     // 使用HAL_UART_Transmit发送数据
     HAL_UART_Transmit(huart, (uint8_t *)json_str, len, HAL_MAX_DELAY);
     HAL_UART_Transmit(huart, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
+
+    // 同步镜像到USART1，便于调试观察4G收发指令
+    if (huart != &huart1)
+    {
+        HAL_UART_Transmit(&huart1, (uint8_t *)json_str, len, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart1, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
+    }
 }
 
 // 发送指定键对值的JSON数据
@@ -274,7 +388,10 @@ void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart)
     char *json_str = cJSON_PrintUnformatted(root);
     if (json_str)
     {
-        const char *prefix = "MQPUB,0,0,{\"id\":\"1\",\"params\":";
+        char prefix[96];
+        snprintf(prefix, sizeof(prefix),
+                 "MQPUB,0,%d,{\"id\":\"1\",\"device_id\":\"%s\",\"params\":",
+                 MQTT_TOPIC_UP_INDEX, MQTT_DEVICE_ID);
         size_t new_len = strlen(prefix) + strlen(json_str) + 1 + 1;
         char *full_str = (char *)malloc(new_len);
         if (full_str)
@@ -294,9 +411,42 @@ void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart)
     cJSON_Delete(root);
 }
 
+void MQTT_Subscribe_Downlink(UART_HandleTypeDef *huart)
+{
+    char sub_cmd[32];
+    snprintf(sub_cmd, sizeof(sub_cmd), "MQSUB,0,%d", MQTT_TOPIC_DOWN_INDEX);
+    Send_JSON(sub_cmd, huart);
+}
+
+void MQTT_Request_Time(UART_HandleTypeDef *huart)
+{
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd),
+             "MQPUB,0,%d,{\"device_id\":\"%s\",\"command\":\"time\"}",
+             MQTT_TOPIC_COMMAND_INDEX, MQTT_DEVICE_ID);
+    Send_JSON(cmd, huart);
+}
+
+void MQTT_Report_Status(UART_HandleTypeDef *huart, const char *status, uint32_t runtime_seconds)
+{
+    if (huart == NULL)
+        return;
+
+    if (status == NULL || status[0] == '\0')
+    {
+        status = "online";
+    }
+
+    char cmd[160];
+    snprintf(cmd, sizeof(cmd),
+             "MQPUB,0,%d,{\"device_id\":\"%s\",\"status\":\"%s\",\"runtime_seconds\":%lu}",
+             MQTT_TOPIC_STATUS_INDEX, MQTT_DEVICE_ID, status, (unsigned long)runtime_seconds);
+    Send_JSON(cmd, huart);
+}
+
 void TimeChange(void)
 {
-    if (UNX_Now_Time > 0)
+    if (g_time_synced && UNX_Now_Time > 0)
     {
         time_t t = (time_t)(UNX_Now_Time / 1000 + 28800); // 转为秒并调整为北京时间
         struct tm *lt = localtime(&t);

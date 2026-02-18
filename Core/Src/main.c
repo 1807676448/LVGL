@@ -67,7 +67,8 @@ static void MPU_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
-#define SendData_Time 1000                                 // 每30s发送一次水质数据
+#define SendData_Time 30000                                 // 每30s发送一次水质数据
+#define StatusReport_Time 60000                            // 每60s发送一次在线状态
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
 AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第二帧缓冲区
@@ -151,7 +152,9 @@ int main(void)
   LCD_Init(); // 初始化LCD
   TP_Init();
 
-  Send_JSON("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
+  MQTT_Subscribe_Downlink(&huart2);
+  MQTT_Request_Time(&huart2);
+  MQTT_Report_Status(&huart2, "online", 0);
 
   lv_init(); // 初始化LVGL
 
@@ -273,7 +276,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (times % 10000 == 123)
     {
       printf("Request time stamp\r\n\r\n");
-      Send_JSON("MQPUB,0,1,{\"device_id\":\"device_002\",\"command\":\"time\"}", &huart2);
+      MQTT_Request_Time(&huart2);
+    }
+    if (times % StatusReport_Time == 0)
+    {
+      MQTT_Report_Status(&huart2, "online", (uint32_t)(HAL_GetTick() / 1000U));
     }
   }
 }
@@ -301,6 +308,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   }
   if (huart->Instance == USART2)
   {
+    // USART2收到的数据同步转发一份到USART1
+    // HAL_UART_Transmit(&huart1, &uart2_rx_buf[uart2_ins], 1, 10);
+
     if (uart2_ins > 500 - 1)
     {
       uart2_ins = 0;

@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <ctype.h>
 
 #include "My_Debug.h"
 #include "My_LVGL.h"
@@ -18,6 +19,11 @@
 //宏定义区
 #define Device_Max 4
 #define MAX_CONFIG_ITEMS 50
+#define MQTT_DEVICE_ID "device_002"
+#define MQTT_TOPIC_UP_INDEX 0
+#define MQTT_TOPIC_STATUS_INDEX 1
+#define MQTT_TOPIC_COMMAND_INDEX 2
+#define MQTT_TOPIC_DOWN_INDEX 0
 //外部变量引用区
 extern uint8_t uart1_rx_buf[500]; // 接收缓冲区
 extern int16_t uart1_ins;
@@ -47,6 +53,9 @@ extern device_status_t device_list[Device_Max];
 void N_My_JsonGet(char *Json_Data,UART_HandleTypeDef *usart);
 void Send_JSON(const char *json_str, UART_HandleTypeDef *huart);
 void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart);
+void MQTT_Subscribe_Downlink(UART_HandleTypeDef *huart);
+void MQTT_Request_Time(UART_HandleTypeDef *huart);
+void MQTT_Report_Status(UART_HandleTypeDef *huart, const char *status, uint32_t runtime_seconds);
 int N_My_JsonQuery(char *key);
 void TimeChange(void);
 
