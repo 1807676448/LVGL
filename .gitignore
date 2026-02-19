@@ -1,0 +1,31 @@
+# ===== Build outputs =====
+/build/
+Vscode/build/
+**/build/
+**/bin/
+**/obj/
+**/out/
+
+# ===== Keil / MDK temporary files =====
+MDK-ARM/**/Debug/
+MDK-ARM/**/Listings/
+MDK-ARM/**/Objects/
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.bak
+
+# ===== VS Code / EIDE =====
+.vscode/launch.json
+.vscode/*.log
+.eide/
+.settings/
+
+# ===== Generated map/log artifacts =====
+*.map.old
+*.map.view
+*.lnp
+*.objlist
+*.htm
+
+# ===== OS files =====
+Thumbs.db
+.DS_Store

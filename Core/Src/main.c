@@ -67,8 +67,8 @@ static void MPU_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
-#define SendData_Time 30000                                 // 每30s发送一次水质数据
-#define StatusReport_Time 60000                            // 每60s发送一次在线状态
+#define SendData_Time 3000                                 // 每30s发送一次水质数据
+#define StatusReport_Time 5000                            // 每60s发送一次在线状态
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
 AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第二帧缓冲区

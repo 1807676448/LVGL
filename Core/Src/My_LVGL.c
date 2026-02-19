@@ -168,6 +168,90 @@ static lv_obj_t *date_label = NULL;    // 日期标签
 static lv_obj_t *weather_label = NULL; // 天气标签
 static lv_obj_t *welcome_label = NULL; // 欢迎信息标签
 
+static lv_style_t style_screen_bg;
+static lv_style_t style_card;
+static lv_style_t style_title;
+static lv_style_t style_btn;
+static lv_style_t style_btn_pressed;
+static bool ui_style_initialized = false;
+
+static void ui_init_theme_and_style(void)
+{
+    if (ui_style_initialized)
+    {
+        return;
+    }
+
+    lv_display_t *disp = lv_display_get_default();
+    if (disp)
+    {
+        lv_theme_t *theme = lv_theme_default_init(disp,
+                                                  lv_palette_main(LV_PALETTE_BLUE),
+                                                  lv_palette_main(LV_PALETTE_GREY),
+                                                  false,
+                                                  LV_FONT_DEFAULT);
+        lv_display_set_theme(disp, theme);
+    }
+
+    lv_style_init(&style_screen_bg);
+    lv_style_set_bg_color(&style_screen_bg, lv_palette_lighten(LV_PALETTE_GREY, 5));
+    lv_style_set_bg_opa(&style_screen_bg, LV_OPA_COVER);
+
+    lv_style_init(&style_card);
+    lv_style_set_radius(&style_card, 12);
+    lv_style_set_bg_color(&style_card, lv_color_white());
+    lv_style_set_bg_opa(&style_card, LV_OPA_COVER);
+    lv_style_set_border_width(&style_card, 1);
+    lv_style_set_border_color(&style_card, lv_palette_lighten(LV_PALETTE_GREY, 2));
+    lv_style_set_pad_all(&style_card, 10);
+
+    lv_style_init(&style_title);
+    lv_style_set_text_font(&style_title, LV_FONT_DEFAULT);
+    lv_style_set_text_color(&style_title, lv_palette_darken(LV_PALETTE_BLUE, 3));
+
+    lv_style_init(&style_btn);
+    lv_style_set_radius(&style_btn, 10);
+    lv_style_set_bg_color(&style_btn, lv_palette_main(LV_PALETTE_BLUE));
+    lv_style_set_bg_opa(&style_btn, LV_OPA_COVER);
+    lv_style_set_text_color(&style_btn, lv_color_white());
+    lv_style_set_pad_ver(&style_btn, 10);
+    lv_style_set_pad_hor(&style_btn, 18);
+
+    lv_style_init(&style_btn_pressed);
+    lv_style_set_bg_color(&style_btn_pressed, lv_palette_darken(LV_PALETTE_BLUE, 2));
+    lv_style_set_bg_opa(&style_btn_pressed, LV_OPA_COVER);
+
+    ui_style_initialized = true;
+}
+
+static void ui_apply_screen_style(lv_obj_t *screen)
+{
+    if (!screen)
+    {
+        return;
+    }
+    lv_obj_add_style(screen, &style_screen_bg, LV_PART_MAIN);
+}
+
+static void ui_apply_title_style(lv_obj_t *obj)
+{
+    if (!obj)
+    {
+        return;
+    }
+    lv_obj_add_style(obj, &style_title, LV_PART_MAIN);
+}
+
+static void ui_apply_button_style(lv_obj_t *btn)
+{
+    if (!btn)
+    {
+        return;
+    }
+    lv_obj_add_style(btn, &style_btn, LV_PART_MAIN);
+    lv_obj_add_style(btn, &style_btn_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+}
+
 // --- 动画处理函数 ---
 /**
  * @brief Y轴平移动画执行回调
@@ -255,6 +339,7 @@ void create_main_screen(void)
 {
     // 创建主屏幕对象
     main_screen = lv_obj_create(NULL);
+    ui_apply_screen_style(main_screen);
 
     // --- 主内容容器 (水平布局) ---
     lv_obj_t *main_content_cont = lv_obj_create(main_screen);
@@ -264,6 +349,7 @@ void create_main_screen(void)
     lv_obj_set_flex_align(main_content_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_border_width(main_content_cont, 0, 0); // 移除容器边框
     lv_obj_set_style_pad_all(main_content_cont, 0, 0);      // 移除容器内边距
+    lv_obj_set_style_bg_opa(main_content_cont, LV_OPA_TRANSP, 0);
     // 允许垂直滚动（虽然全屏不太可能溢出）
     lv_obj_set_scroll_dir(main_content_cont, LV_DIR_VER);
 
@@ -275,6 +361,8 @@ void create_main_screen(void)
     lv_obj_set_flex_align(left_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_border_width(left_cont, 0, 0); // 移除边框
     lv_obj_set_style_pad_all(left_cont, 10, 0);     // 添加内边距
+    lv_obj_add_style(left_cont, &style_card, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(left_cont, 12, 0);
 
     // --- 右侧容器用于显示信息 (占50%宽度) ---
     lv_obj_t *right_cont = lv_obj_create(main_content_cont);
@@ -284,6 +372,8 @@ void create_main_screen(void)
     lv_obj_set_flex_align(right_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_border_width(right_cont, 0, 0); // 移除边框
     lv_obj_set_style_pad_all(right_cont, 10, 0);     // 添加内边距
+    lv_obj_add_style(right_cont, &style_card, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(right_cont, 10, 0);
 
     // --- 在左侧容器中创建按钮 ---
     lv_obj_t *buttons[4];                                                      // 按钮对象数组
@@ -292,8 +382,11 @@ void create_main_screen(void)
     for (int i = 0; i < 4; i++)
     {
         buttons[i] = lv_button_create(left_cont);      // 在左侧容器中创建按钮
+        lv_obj_set_size(buttons[i], 170, 46);
+        ui_apply_button_style(buttons[i]);
         lv_obj_t *label = lv_label_create(buttons[i]); // 在按钮上创建标签
         lv_label_set_text(label, button_labels[i]);    // 设置标签文本
+        lv_obj_set_style_text_font(label, LV_FONT_DEFAULT, 0);
         lv_obj_center(label);                          // 将标签居中放置在按钮上
         // 为按钮添加点击事件回调，并传递屏幕ID (1-4)
         lv_obj_add_event_cb(buttons[i], main_menu_event_handler, LV_EVENT_CLICKED, (void *)(i + 1));
@@ -303,20 +396,25 @@ void create_main_screen(void)
     // 时间标签
     time_label = lv_label_create(right_cont);
     lv_label_set_text(time_label, "00:00:00"); // 初始文本
+    lv_obj_set_style_text_font(time_label, LV_FONT_DEFAULT, 0);
+    lv_obj_set_style_text_color(time_label, lv_palette_darken(LV_PALETTE_BLUE, 2), 0);
     // 可选：为时间标签设置字体样式
     // lv_obj_set_style_text_font(time_label, &lv_font_montserrat_20, 0);
 
     // 日期标签
     date_label = lv_label_create(right_cont);
     lv_label_set_text(date_label, "1970-01-01"); // 初始文本
+    lv_obj_set_style_text_font(date_label, LV_FONT_DEFAULT, 0);
 
     // 天气标签
     weather_label = lv_label_create(right_cont);
     lv_label_set_text(weather_label, "Sunny"); // 初始文本
+    lv_obj_set_style_text_font(weather_label, LV_FONT_DEFAULT, 0);
 
     // 欢迎标签
     welcome_label = lv_label_create(right_cont);
     lv_label_set_text(welcome_label, "Welcome!"); // 初始文本
+    lv_obj_set_style_text_font(welcome_label, LV_FONT_DEFAULT, 0);
     // 为欢迎标签启动动画
     start_welcome_animation(welcome_label);
 
@@ -435,14 +533,17 @@ void create_screen_1(void)
 {
     // --- 基本屏幕设置 ---
     screen_1 = lv_obj_create(NULL); // 创建屏幕1对象
+    ui_apply_screen_style(screen_1);
 
     // 添加标题标签
     lv_obj_t *title = lv_label_create(screen_1);
     lv_label_set_text(title, "水质检测数据");
+    ui_apply_title_style(title);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10); // 将标题对齐到顶部中央
 
     // 添加返回按钮
     lv_obj_t *back_btn = lv_button_create(screen_1);
+    ui_apply_button_style(back_btn);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "返回");
@@ -455,6 +556,7 @@ void create_screen_1(void)
 
     // 为数据项列表创建一个容器
     list_cont = lv_obj_create(screen_1);
+    lv_obj_add_style(list_cont, &style_card, LV_PART_MAIN);
     // 设置容器大小，宽度为屏幕90%，高度为屏幕高度减去100像素
     lv_obj_set_size(list_cont, LV_PCT(90), LV_VER_RES - 100);
     // 将容器放置在标题下方
@@ -660,14 +762,17 @@ static void sync_device_status_from_data(lv_timer_t *t)
 void create_screen_2(void)
 {
     screen_2 = lv_obj_create(NULL); // 创建屏幕2对象
+    ui_apply_screen_style(screen_2);
 
     // 添加标题标签
     lv_obj_t *title = lv_label_create(screen_2);
     lv_label_set_text(title, "设备监控");
+    ui_apply_title_style(title);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
     // 添加返回按钮
     lv_obj_t *back_btn = lv_button_create(screen_2);
+    ui_apply_button_style(back_btn);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "返回");
@@ -676,6 +781,7 @@ void create_screen_2(void)
 
     // --- 主内容容器 ---
     lv_obj_t *main_cont = lv_obj_create(screen_2);
+    lv_obj_add_style(main_cont, &style_card, LV_PART_MAIN);
     lv_obj_set_size(main_cont, LV_PCT(90), LV_VER_RES - 100);
     lv_obj_align_to(main_cont, title, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
     lv_obj_set_flex_flow(main_cont, LV_FLEX_FLOW_ROW_WRAP); // 换行布局
@@ -692,9 +798,9 @@ void create_screen_2(void)
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
         // 设置卡片样式
-        lv_obj_set_style_radius(card, 8, 0);
+        lv_obj_set_style_radius(card, 10, 0);
         lv_obj_set_style_border_width(card, 1, 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0x444444), 0);
+        lv_obj_set_style_border_color(card, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
         lv_obj_set_style_pad_all(card, 5, 0);
 
         // 保存卡片对象作为指示器(背景变色)
@@ -766,16 +872,18 @@ void create_screen_3(void)
     // 初始化随机数种子
 
     screen_3 = lv_obj_create(NULL); // 创建屏幕3对象
+    ui_apply_screen_style(screen_3);
     // lv_obj_set_size(screen_3, 480, 320); // 可选：显式设置屏幕大小（如果需要）
 
     // --- 标题标签 ---
     lv_obj_t *title = lv_label_create(screen_3);
     lv_label_set_text(title, "动态折线图");
-    lv_obj_set_style_text_font(title, &lv_font_weiruan_16, 0); // 设置稍大的字体
+    ui_apply_title_style(title);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);              // 将标题对齐到顶部中央
 
     // --- 返回按钮 ---
     lv_obj_t *back_btn = lv_button_create(screen_3);
+    ui_apply_button_style(back_btn);
     lv_obj_set_width(back_btn, 180);                     // 设置按钮合理宽度
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
@@ -787,6 +895,7 @@ void create_screen_3(void)
     chart = lv_chart_create(screen_3);
     lv_obj_set_size(chart, 440, 220);             // 设置图表大小（根据需要调整）
     lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, 40); // 将图表放置在标题下方
+    lv_obj_add_style(chart, &style_card, LV_PART_MAIN);
 
     // 配置图表
     lv_chart_set_type(chart, LV_CHART_TYPE_LINE); // 设置图表类型为折线图
@@ -857,34 +966,32 @@ void create_screen_4(void)
 {
     // 创建屏幕对象
     screen_4 = lv_obj_create(NULL);
+    ui_apply_screen_style(screen_4);
     // lv_obj_set_size(screen_4, 480, 320); // 可选：显式设置屏幕大小（如果需要）
 
     // --- 标题标签 ---
     lv_obj_t *title = lv_label_create(screen_4);
     lv_label_set_text(title, "关于");
-    lv_obj_set_style_text_font(title, &lv_font_weiruan_16, 0); // 为标题设置稍大的字体
+    ui_apply_title_style(title);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);              // 将标题对齐到顶部中央
 
     // --- 信息容器 ---
     // 创建一个容器来容纳信息标签，以便更好地控制布局
     lv_obj_t *info_container = lv_obj_create(screen_4);
+    lv_obj_add_style(info_container, &style_card, LV_PART_MAIN);
     // 设置容器大小：宽度为90%，高度为60%
     lv_obj_set_size(info_container, LV_PCT(90), LV_PCT(60));
     lv_obj_set_style_pad_all(info_container, 15, 0);           // 在容器内添加填充
-    lv_obj_set_style_border_width(info_container, 1, 0);       // 可选：添加边框
-    lv_obj_set_style_radius(info_container, 10, 0);            // 可选：圆角
     lv_obj_set_flex_flow(info_container, LV_FLEX_FLOW_COLUMN); // 将子元素垂直排列
     // 设置子元素对齐方式
     lv_obj_set_flex_align(info_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_align(info_container, LV_ALIGN_CENTER, 0, 0);       // 将容器居中放置在屏幕上
-    lv_obj_set_style_border_width(info_container, 0, 0);       // 可选：移除默认边框
-    lv_obj_set_style_bg_opa(info_container, LV_OPA_TRANSP, 0); // 使容器背景透明
 
     // --- 项目名称标签 ---
     lv_obj_t *project_name_label = lv_label_create(info_container);
     // 使用格式化字符串设置项目名称
     lv_label_set_text_fmt(project_name_label, "设备名称: %s", PROJECT_NAME);
-    lv_obj_set_style_text_font(project_name_label, &lv_font_weiruan_16, 0); // 设置字体
+    lv_obj_set_style_text_font(project_name_label, LV_FONT_DEFAULT, 0); // 设置字体
 
     // --- 作者标签 ---
     lv_obj_t *authors_label = lv_label_create(info_container);
@@ -901,16 +1008,17 @@ void create_screen_4(void)
         }
     }
     lv_label_set_text(authors_label, authors_text);                    // 设置标签文本
-    lv_obj_set_style_text_font(authors_label, &lv_font_weiruan_16, 0); // 设置字体
+    lv_obj_set_style_text_font(authors_label, LV_FONT_DEFAULT, 0); // 设置字体
 
     // --- 创建时间标签 ---
     lv_obj_t *time_label = lv_label_create(info_container);
     // 使用格式化字符串设置创建时间
     lv_label_set_text_fmt(time_label, "创建时间: %s", CREATION_TIME);
-    lv_obj_set_style_text_font(time_label, &lv_font_weiruan_16, 0); // 设置字体
+    lv_obj_set_style_text_font(time_label, LV_FONT_DEFAULT, 0); // 设置字体
 
     // --- 返回按钮 ---
     lv_obj_t *back_btn = lv_button_create(screen_4);
+    ui_apply_button_style(back_btn);
     lv_obj_set_style_pad_hor(back_btn, 20, 0);           // 为按钮添加水平内边距
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20); // 将按钮对齐到底部中央
     lv_obj_t *back_label = lv_label_create(back_btn);
@@ -984,6 +1092,8 @@ static void back_to_main_event_handler(lv_event_t *e)
  */
 void setup_ui(void)
 {
+    ui_init_theme_and_style();
+
     // 创建所有屏幕
     create_main_screen();
     create_screen_1();
