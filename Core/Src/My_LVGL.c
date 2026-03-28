@@ -494,15 +494,6 @@ int update_screen1_item(const char *name, double value)
     if (value < item_configs[config_idx].range_min || value > item_configs[config_idx].range_max)
         return 3;
 
-    if (name && strcmp(name, "ZheXian1") == 0)
-    {
-        add_data1_to_chart_screen_3((int32_t)value);
-    }
-    else if (name && strcmp(name, "ZheXian2") == 0)
-    {
-        add_data2_to_chart_screen_3((int32_t)value);
-    }
-
     for (uint8_t i = 0; i < screen1_item_count; i++)
     {
         if (screen1_items[i].name && strcmp(screen1_items[i].name, name) == 0)
@@ -831,118 +822,379 @@ void create_screen_2(void)
 
 // 创建屏幕3的函数
 // --- 全局/静态变量 ---
-static lv_obj_t *screen_3 = NULL; // 屏幕3对象指针
-static lv_obj_t *chart = NULL;    // 图表对象指针
+static lv_obj_t *joystick_base = NULL;
+static lv_obj_t *joystick_knob = NULL;
+static lv_obj_t *joystick_state_label = NULL;
 
-static lv_chart_series_t *ser1 = NULL; // 图表系列1指针
-static lv_chart_series_t *ser2 = NULL; // 图表系列2指针
+#define JOYSTICK_MAX_DEFLECTION 34
+#define JOYSTICK_DEADZONE 12
 
-static lv_timer_t *data_timer = NULL; // 用于更新图表数据的定时器指针
+static joystick_state_t g_joystick_state = {
+    .direction = JOYSTICK_DIR_CENTER,
+    .x_percent = 0,
+    .y_percent = 0,
+    .active = false};
 
-// --- 前向声明 ---
-static void back_to_main_event_handler(lv_event_t *e);      // 返回主菜单事件处理
-static void feed_chart_with_random_data(lv_timer_t *timer); // 定时器回调函数，用于生成随机数据
-
-// --- 接口函数：向屏幕3的图表添加数据 ---
-/**
- * @brief 向屏幕3上的图表添加新的数据点
- *
- * @param new_point1 系列1的新整数值
- * @param new_point2 系列2的新整数值
- */
-void add_data1_to_chart_screen_3(int32_t new_point1)
+static joystick_direction_t joystick_calc_direction(int16_t dx, int16_t dy, bool active)
 {
-    lv_chart_set_next_value(chart, ser1, new_point1); // 为系列1添加数据点
+    if (!active)
+    {
+        return JOYSTICK_DIR_CENTER;
+    }
+
+    if (LV_ABS(dx) <= JOYSTICK_DEADZONE && LV_ABS(dy) <= JOYSTICK_DEADZONE)
+    {
+        return JOYSTICK_DIR_CENTER;
+    }
+
+    if (LV_ABS(dx) > LV_ABS(dy))
+    {
+        return (dx > 0) ? JOYSTICK_DIR_RIGHT : JOYSTICK_DIR_LEFT;
+    }
+
+    return (dy > 0) ? JOYSTICK_DIR_DOWN : JOYSTICK_DIR_UP;
 }
-void add_data2_to_chart_screen_3(int32_t new_point2)
+
+const char *joystick_direction_to_str(joystick_direction_t dir)
 {
-    lv_chart_set_next_value(chart, ser2, new_point2); // 为系列2添加数据点
+    switch (dir)
+    {
+    case JOYSTICK_DIR_UP:
+        return "UP";
+    case JOYSTICK_DIR_DOWN:
+        return "DOWN";
+    case JOYSTICK_DIR_LEFT:
+        return "LEFT";
+    case JOYSTICK_DIR_RIGHT:
+        return "RIGHT";
+    case JOYSTICK_DIR_CENTER:
+    default:
+        return "CENTER";
+    }
+}
+
+joystick_direction_t joystick_get_direction(void)
+{
+    return g_joystick_state.direction;
+}
+
+void joystick_get_state(joystick_state_t *out_state)
+{
+    if (!out_state)
+    {
+        return;
+    }
+    *out_state = g_joystick_state;
+}
+
+static void joystick_update_state_label(void)
+{
+    if (!joystick_state_label)
+    {
+        return;
+    }
+
+    lv_label_set_text_fmt(joystick_state_label,
+                          "方向:%s  X:%d%%  Y:%d%%",
+                          joystick_direction_to_str(g_joystick_state.direction),
+                          g_joystick_state.x_percent,
+                          g_joystick_state.y_percent);
+}
+
+static void joystick_apply_vector(int16_t dx, int16_t dy, bool active)
+{
+    int16_t max_abs = LV_MAX(LV_ABS(dx), LV_ABS(dy));
+    if (max_abs > JOYSTICK_MAX_DEFLECTION)
+    {
+        dx = (int16_t)((dx * JOYSTICK_MAX_DEFLECTION) / max_abs);
+        dy = (int16_t)((dy * JOYSTICK_MAX_DEFLECTION) / max_abs);
+    }
+
+    if (!active)
+    {
+        dx = 0;
+        dy = 0;
+    }
+
+    g_joystick_state.direction = joystick_calc_direction(dx, dy, active);
+    g_joystick_state.x_percent = (int16_t)((dx * 100) / JOYSTICK_MAX_DEFLECTION);
+    g_joystick_state.y_percent = (int16_t)((-dy * 100) / JOYSTICK_MAX_DEFLECTION);
+    g_joystick_state.active = active;
+
+    if (joystick_knob)
+    {
+        lv_obj_align(joystick_knob, LV_ALIGN_CENTER, dx, dy);
+    }
+
+    joystick_update_state_label();
+}
+
+static void joystick_base_event_handler(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING)
+    {
+        lv_indev_t *indev = lv_indev_active();
+        if (!indev || !joystick_base)
+        {
+            return;
+        }
+
+        lv_point_t p;
+        lv_area_t coords;
+        lv_indev_get_point(indev, &p);
+        lv_obj_get_coords(joystick_base, &coords);
+
+        int16_t cx = (int16_t)((coords.x1 + coords.x2) / 2);
+        int16_t cy = (int16_t)((coords.y1 + coords.y2) / 2);
+        int16_t dx = (int16_t)(p.x - cx);
+        int16_t dy = (int16_t)(p.y - cy);
+
+        joystick_apply_vector(dx, dy, true);
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST)
+    {
+        joystick_apply_vector(0, 0, false);
+    }
+}
+
+static void joystick_key_event_handler(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    joystick_direction_t dir = (joystick_direction_t)(uintptr_t)lv_event_get_user_data(e);
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        switch (dir)
+        {
+        case JOYSTICK_DIR_UP:
+            joystick_apply_vector(0, -JOYSTICK_MAX_DEFLECTION, true);
+            break;
+        case JOYSTICK_DIR_DOWN:
+            joystick_apply_vector(0, JOYSTICK_MAX_DEFLECTION, true);
+            break;
+        case JOYSTICK_DIR_LEFT:
+            joystick_apply_vector(-JOYSTICK_MAX_DEFLECTION, 0, true);
+            break;
+        case JOYSTICK_DIR_RIGHT:
+            joystick_apply_vector(JOYSTICK_MAX_DEFLECTION, 0, true);
+            break;
+        case JOYSTICK_DIR_CENTER:
+        default:
+            joystick_apply_vector(0, 0, false);
+            break;
+        }
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST)
+    {
+        joystick_apply_vector(0, 0, false);
+    }
 }
 
 // --- 创建屏幕3函数 ---
 /**
  * @brief 创建屏幕3及其内容
  *
- * 此函数构建屏幕3的UI，展示一个动态更新的折线图。
+ * 此函数构建屏幕3的UI，展示虚拟遥杆与四方向按键。
  */
-// 示例代码{"ZheXian1":40,"ZheXian2":60}
 void create_screen_3(void)
 {
-    // 初始化随机数种子
-
     screen_3 = lv_obj_create(NULL); // 创建屏幕3对象
     ui_apply_screen_style(screen_3);
-    // lv_obj_set_size(screen_3, 480, 320); // 可选：显式设置屏幕大小（如果需要）
+    lv_obj_clear_flag(screen_3, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(screen_3, LV_SCROLLBAR_MODE_OFF);
+
+    lv_display_t *disp = lv_display_get_default();
+    int32_t screen_w = 320;
+    int32_t screen_h = 480;
+    if (disp)
+    {
+        screen_w = lv_display_get_horizontal_resolution(disp);
+        screen_h = lv_display_get_vertical_resolution(disp);
+    }
+
+    int32_t panel_w = (screen_w * 94) / 100;
+    int32_t panel_h = screen_h - 170;
+    if (panel_h > 300)
+    {
+        panel_h = 300;
+    }
+    if (panel_h < 170)
+    {
+        panel_h = 170;
+    }
+
+    int32_t joy_size = panel_h - 54;
+    if (joy_size > 128)
+    {
+        joy_size = 128;
+    }
+    if (joy_size < 100)
+    {
+        joy_size = 100;
+    }
+
+    int32_t knob_size = joy_size / 3;
+    if (knob_size > 46)
+    {
+        knob_size = 46;
+    }
+    if (knob_size < 36)
+    {
+        knob_size = 36;
+    }
+
+    int32_t dpad_size = joy_size - 8;
+    if (dpad_size < 92)
+    {
+        dpad_size = 92;
+    }
+
+    int32_t dpad_btn_w = dpad_size / 3;
+    int32_t dpad_btn_h = dpad_size / 4;
+    if (dpad_btn_w > 44)
+    {
+        dpad_btn_w = 44;
+    }
+    if (dpad_btn_w < 34)
+    {
+        dpad_btn_w = 34;
+    }
+    if (dpad_btn_h > 34)
+    {
+        dpad_btn_h = 34;
+    }
+    if (dpad_btn_h < 28)
+    {
+        dpad_btn_h = 28;
+    }
+
+    // 左右控件间距收紧约15%（左右各向中心移动7.5%）
+    int32_t inward = (panel_w * 15) / 200;
+    if (inward < 10)
+    {
+        inward = 10;
+    }
 
     // --- 标题标签 ---
     lv_obj_t *title = lv_label_create(screen_3);
-    lv_label_set_text(title, "动态折线图");
+    lv_label_set_text(title, "遥杆");
     ui_apply_title_style(title);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);              // 将标题对齐到顶部中央
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
 
     // --- 返回按钮 ---
     lv_obj_t *back_btn = lv_button_create(screen_3);
     ui_apply_button_style(back_btn);
-    lv_obj_set_width(back_btn, 180);                     // 设置按钮合理宽度
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -10); // 将按钮对齐到底部中央
+    lv_obj_set_width(back_btn, 140);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "返回");
-    lv_obj_center(back_label);                                                         // 将标签居中放置在按钮上
-    lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
+    lv_obj_center(back_label);
+    lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL);
 
-    // --- 动态折线图 ---
-    chart = lv_chart_create(screen_3);
-    lv_obj_set_size(chart, 440, 220);             // 设置图表大小（根据需要调整）
-    lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, 40); // 将图表放置在标题下方
-    lv_obj_add_style(chart, &style_card, LV_PART_MAIN);
+    lv_obj_t *panel = lv_obj_create(screen_3);
+    lv_obj_add_style(panel, &style_card, LV_PART_MAIN);
+    lv_obj_set_size(panel, panel_w, panel_h);
+    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 42);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 配置图表
-    lv_chart_set_type(chart, LV_CHART_TYPE_LINE); // 设置图表类型为折线图
-    lv_chart_set_point_count(chart, 50);          // 显示最多50个数据点
+    joystick_base = lv_obj_create(panel);
+    lv_obj_set_size(joystick_base, joy_size, joy_size);
+    lv_obj_align(joystick_base, LV_ALIGN_LEFT_MID, 10 + inward, -4);
+    lv_obj_set_style_radius(joystick_base, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(joystick_base, 3, 0);
+    lv_obj_set_style_border_color(joystick_base, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_bg_color(joystick_base, lv_palette_lighten(LV_PALETTE_BLUE, 4), 0);
+    lv_obj_set_style_bg_opa(joystick_base, LV_OPA_40, 0);
+    lv_obj_set_style_pad_all(joystick_base, 0, 0);
+    lv_obj_clear_flag(joystick_base, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 添加Y轴并设置范围
-    // lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 10, 5, 6, 2, true, 40); // Y轴刻度
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);   // 设置Y轴范围为0-100
-    lv_chart_set_range(chart, LV_CHART_AXIS_SECONDARY_Y, 0, 100); // 设置Y轴范围为0-100
+    joystick_knob = lv_obj_create(joystick_base);
+    lv_obj_set_size(joystick_knob, knob_size, knob_size);
+    lv_obj_set_style_radius(joystick_knob, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(joystick_knob, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_bg_opa(joystick_knob, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(joystick_knob, 2, 0);
+    lv_obj_set_style_border_color(joystick_knob, lv_color_white(), 0);
+    lv_obj_clear_flag(joystick_knob, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(joystick_knob, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(joystick_knob, LV_ALIGN_CENTER, 0, 0);
 
-    // 添加X轴刻度 (可选，可以设置得不那么频繁)
-    // lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 10, 5, 10, 1, true, 30);
+    lv_obj_add_event_cb(joystick_base, joystick_base_event_handler, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(joystick_base, joystick_base_event_handler, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(joystick_base, joystick_base_event_handler, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(joystick_base, joystick_base_event_handler, LV_EVENT_PRESS_LOST, NULL);
 
-    // 为图表创建数据系列
-    ser1 = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_GREEN), LV_CHART_AXIS_PRIMARY_Y); // 添加绿色系列到主Y轴
-    ser2 = lv_chart_add_series(chart, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_SECONDARY_Y); // 添加红色系列到次Y轴
-    // 可选：设置线条宽度和点大小
-    lv_obj_set_style_size(chart, 0, 0, LV_PART_INDICATOR); // 隐藏默认点大小
-    lv_obj_set_style_line_width(chart, 3, LV_PART_ITEMS);  // 设置线条宽度
+    lv_obj_t *dpad_cont = lv_obj_create(panel);
+    lv_obj_set_size(dpad_cont, dpad_size, dpad_size);
+    lv_obj_align(dpad_cont, LV_ALIGN_RIGHT_MID, -(10 + inward), -4);
+    lv_obj_set_style_border_width(dpad_cont, 0, 0);
+    lv_obj_set_style_bg_opa(dpad_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(dpad_cont, 0, 0);
+    lv_obj_clear_flag(dpad_cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    // --- 示例：添加一些初始的虚拟数据 ---
-    // 这是可选的，否则图表最初将是空的
-    // for (int i = 0; i < 10; i++) {
-    //     add_data_to_chart_screen_3(rand() % 101); // 最初添加10个随机点
-    // }
+    lv_obj_t *up_btn = lv_button_create(dpad_cont);
+    ui_apply_button_style(up_btn);
+    lv_obj_set_size(up_btn, dpad_btn_w, dpad_btn_h);
+    lv_obj_align(up_btn, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_t *up_label = lv_label_create(up_btn);
+    lv_label_set_text(up_label, "上");
+    lv_obj_center(up_label);
 
-    // --- 启动定时器以馈送随机数据 ---
-    // 创建一个定时器，每300毫秒馈送一次随机数据
-    // data_timer = lv_timer_create(feed_chart_with_random_data, 300, NULL);
-    // if (!data_timer)
-    // {
-    //     // 如果需要，处理定时器创建错误
-    //     LV_LOG_WARN("无法为屏幕3图表创建数据定时器。");
-    // }
-    // 定时器自动启动
+    lv_obj_t *down_btn = lv_button_create(dpad_cont);
+    ui_apply_button_style(down_btn);
+    lv_obj_set_size(down_btn, dpad_btn_w, dpad_btn_h);
+    lv_obj_align(down_btn, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_t *down_label = lv_label_create(down_btn);
+    lv_label_set_text(down_label, "下");
+    lv_obj_center(down_label);
+
+    lv_obj_t *left_btn = lv_button_create(dpad_cont);
+    ui_apply_button_style(left_btn);
+    lv_obj_set_size(left_btn, dpad_btn_w, dpad_btn_h);
+    lv_obj_align(left_btn, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t *left_label = lv_label_create(left_btn);
+    lv_label_set_text(left_label, "左");
+    lv_obj_center(left_label);
+
+    lv_obj_t *right_btn = lv_button_create(dpad_cont);
+    ui_apply_button_style(right_btn);
+    lv_obj_set_size(right_btn, dpad_btn_w, dpad_btn_h);
+    lv_obj_align(right_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_t *right_label = lv_label_create(right_btn);
+    lv_label_set_text(right_label, "右");
+    lv_obj_center(right_label);
+
+    lv_obj_add_event_cb(up_btn, joystick_key_event_handler, LV_EVENT_PRESSED, (void *)(uintptr_t)JOYSTICK_DIR_UP);
+    lv_obj_add_event_cb(up_btn, joystick_key_event_handler, LV_EVENT_RELEASED, (void *)(uintptr_t)JOYSTICK_DIR_UP);
+    lv_obj_add_event_cb(up_btn, joystick_key_event_handler, LV_EVENT_PRESS_LOST, (void *)(uintptr_t)JOYSTICK_DIR_UP);
+
+    lv_obj_add_event_cb(down_btn, joystick_key_event_handler, LV_EVENT_PRESSED, (void *)(uintptr_t)JOYSTICK_DIR_DOWN);
+    lv_obj_add_event_cb(down_btn, joystick_key_event_handler, LV_EVENT_RELEASED, (void *)(uintptr_t)JOYSTICK_DIR_DOWN);
+    lv_obj_add_event_cb(down_btn, joystick_key_event_handler, LV_EVENT_PRESS_LOST, (void *)(uintptr_t)JOYSTICK_DIR_DOWN);
+
+    lv_obj_add_event_cb(left_btn, joystick_key_event_handler, LV_EVENT_PRESSED, (void *)(uintptr_t)JOYSTICK_DIR_LEFT);
+    lv_obj_add_event_cb(left_btn, joystick_key_event_handler, LV_EVENT_RELEASED, (void *)(uintptr_t)JOYSTICK_DIR_LEFT);
+    lv_obj_add_event_cb(left_btn, joystick_key_event_handler, LV_EVENT_PRESS_LOST, (void *)(uintptr_t)JOYSTICK_DIR_LEFT);
+
+    lv_obj_add_event_cb(right_btn, joystick_key_event_handler, LV_EVENT_PRESSED, (void *)(uintptr_t)JOYSTICK_DIR_RIGHT);
+    lv_obj_add_event_cb(right_btn, joystick_key_event_handler, LV_EVENT_RELEASED, (void *)(uintptr_t)JOYSTICK_DIR_RIGHT);
+    lv_obj_add_event_cb(right_btn, joystick_key_event_handler, LV_EVENT_PRESS_LOST, (void *)(uintptr_t)JOYSTICK_DIR_RIGHT);
+
+    joystick_state_label = lv_label_create(screen_3);
+    lv_obj_set_style_text_color(joystick_state_label, lv_palette_darken(LV_PALETTE_BLUE, 2), 0);
+    lv_obj_align_to(joystick_state_label, panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 16);
+
+    // 确保返回键不被其他对象遮挡
+    lv_obj_move_foreground(back_btn);
+
+    joystick_apply_vector(0, 0, false);
 }
-
-// --- 定时器回调函数：生成并馈送随机数据 ---
-/**
- * @brief 定时器回调函数，用于生成随机数据并更新图表
- *
- * @param timer 指向触发此回调的定时器的指针
- */
-// static void feed_chart_with_random_data(lv_timer_t *timer)
-// {
-//     // 调用接口函数添加数据点
-//     add_data_to_chart_screen_3((int32_t)lv_rand(0, 90), (int32_t)lv_rand(0, 90)); // 生成0-90之间的随机数
-// }
 
 // --- 外部/全局声明 ---
 // 假设 screen_4 和 back_to_main_event_handler 在别处定义/声明

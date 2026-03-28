@@ -27,9 +27,27 @@ void setup_ui(void);
 //接口函数声明
 void update_main_screen_info(const char *new_time, const char *new_date, const char *new_weather, const char *new_welcome_msg);
 int update_screen1_item(const char *name, double value);
-//示例代码 {"TDS": 50,"COD": 1,"TOC": 2,"UV254": 3,"pH": 4,"Tem": 5,"Hum": 6}
-void add_data1_to_chart_screen_3(int32_t new_point1);
-void add_data2_to_chart_screen_3(int32_t new_point2);
+
+typedef enum
+{
+	JOYSTICK_DIR_CENTER = 0,
+	JOYSTICK_DIR_UP,
+	JOYSTICK_DIR_DOWN,
+	JOYSTICK_DIR_LEFT,
+	JOYSTICK_DIR_RIGHT
+} joystick_direction_t;
+
+typedef struct
+{
+	joystick_direction_t direction;
+	int16_t x_percent; // -100~100，右为正
+	int16_t y_percent; // -100~100，上为正
+	bool active;
+} joystick_state_t;
+
+joystick_direction_t joystick_get_direction(void);
+void joystick_get_state(joystick_state_t *out_state);
+const char *joystick_direction_to_str(joystick_direction_t dir);
 
 // 解析串口JSON并更新设备状态
 // JSON格式示例: {"device_id": "device_001", "status": "active"} //或 1
