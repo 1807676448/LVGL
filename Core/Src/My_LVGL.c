@@ -1,5 +1,4 @@
 #include "My_LVGL.h"
-#include "My_Data.h"
 #include "stm32h7xx_hal.h"
 #include <stdio.h>
 #include <string.h>

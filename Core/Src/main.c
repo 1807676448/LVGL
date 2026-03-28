@@ -31,7 +31,6 @@
 #include "..\Core\lvgl\src\lvgl.h"
 #include "My_Debug.h"
 #include "My_LVGL.h"
-#include "My_Data.h"
 #include "My_Data_New.h"
 #include <time.h>
 /* USER CODE END Includes */

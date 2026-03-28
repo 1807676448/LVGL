@@ -109,7 +109,6 @@ targets:
       - ../Core/lvgl/examples/scroll
       - ../Core/lvgl/examples/styles
       - ../Core/lvgl/examples
-      - <virtual_root>/Application/User/Core/My_Data.c
     toolchain: AC6
     toolchainConfigMap:
       AC6:

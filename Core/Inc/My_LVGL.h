@@ -13,7 +13,6 @@
 #include "..\Core\lvgl\src\lvgl.h"
 #include "My_Debug.h"
 #include "Touch.h"
-#include "My_Data.h"
 #include "My_Data_New.h"
 
 #define DeviceHeartTime 30000 //设备心跳时间30秒
