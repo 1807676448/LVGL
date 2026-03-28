@@ -376,7 +376,7 @@ void create_main_screen(void)
 
     // --- 在左侧容器中创建按钮 ---
     lv_obj_t *buttons[4];                                                      // 按钮对象数组
-    const char *button_labels[] = {"水质数据", "设备开关", "折线图", "About"}; // 按钮标签
+    const char *button_labels[] = {"水质数据", "设备开关", "遥杆", "About"}; // 按钮标签
 
     for (int i = 0; i < 4; i++)
     {
@@ -885,6 +885,11 @@ void joystick_get_state(joystick_state_t *out_state)
         return;
     }
     *out_state = g_joystick_state;
+}
+
+bool joystick_screen_is_active(void)
+{
+    return lv_screen_active() == screen_3;
 }
 
 static void joystick_update_state_label(void)

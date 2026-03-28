@@ -48,6 +48,7 @@ typedef struct
 joystick_direction_t joystick_get_direction(void);
 void joystick_get_state(joystick_state_t *out_state);
 const char *joystick_direction_to_str(joystick_direction_t dir);
+bool joystick_screen_is_active(void);
 
 // 解析串口JSON并更新设备状态
 // JSON格式示例: {"device_id": "device_001", "status": "active"} //或 1

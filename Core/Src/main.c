@@ -32,6 +32,7 @@
 #include "My_Debug.h"
 #include "My_LVGL.h"
 #include "My_Data_New.h"
+#include <stdio.h>
 #include <time.h>
 /* USER CODE END Includes */
 
@@ -60,6 +61,7 @@
 void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
+static void USART3_Test_Task(void);
 
 /* USER CODE END PFP */
 
@@ -67,7 +69,7 @@ static void MPU_Config(void);
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
 #define SendData_Time 3000                                 // 每30s发送一次水质数据
-#define StatusReport_Time 5000                            // 每60s发送一次在线状态
+#define StatusReport_Time 5000                             // 每60s发送一次在线状态
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
 AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第二帧缓冲区
@@ -189,6 +191,11 @@ int main(void)
     N_My_JsonGet((char *)uart2_rx_buf, &huart2);
     N_My_JsonGet((char *)uart3_rx_buf, &huart3);
 
+    if (joystick_screen_is_active())
+    {
+      USART3_Test_Task();
+    }
+
     // HAL_Delay(500);
   }
   /* USER CODE END 3 */
@@ -254,6 +261,58 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void USART3_Test_Task(void)
+{
+  static uint32_t last_tick = 0U;
+  joystick_state_t state;
+  uint8_t frame[6];
+  uint8_t up = 0U;
+  uint8_t down = 0U;
+  uint8_t left = 0U;
+  uint8_t right = 0U;
+
+  if ((HAL_GetTick() - last_tick) < 250)
+  {
+    return;
+  }
+
+  last_tick = HAL_GetTick();
+
+  joystick_get_state(&state);
+
+  if (state.active)
+  {
+    if (state.y_percent > 0)
+    {
+      up = (state.y_percent >= 100) ? 100U : (uint8_t)state.y_percent;
+    }
+    else
+    {
+      int16_t v = (int16_t)(-state.y_percent);
+      down = (v >= 100) ? 100U : (uint8_t)v;
+    }
+
+    if (state.x_percent > 0)
+    {
+      right = (state.x_percent >= 100) ? 100U : (uint8_t)state.x_percent;
+    }
+    else
+    {
+      int16_t v = (int16_t)(-state.x_percent);
+      left = (v >= 100) ? 100U : (uint8_t)v;
+    }
+  }
+
+  frame[0] = 0xAAU;
+  frame[1] = up;
+  frame[2] = down;
+  frame[3] = left;
+  frame[4] = right;
+  frame[5] = 0x55U;
+
+  (void)HAL_UART_Transmit(&huart3, frame, sizeof(frame), 100U);
+}
+
 static uint64_t times = 0;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
