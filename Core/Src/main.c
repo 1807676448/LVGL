@@ -82,6 +82,8 @@ uint8_t uart2_rx_buf[500]; // 接收缓冲区
 int16_t uart2_ins;
 uint8_t uart3_rx_buf[500]; // 接收缓冲区
 int16_t uart3_ins;
+/* USART3 RX DMA 累积接收标志：ISR 置位，主循环处理 */
+static bool uart3_rx_updated = false;
 
 uint64_t UNX_Now_Time = 0; // 当前时间戳
 static const char *keys[] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
@@ -89,9 +91,9 @@ static const char *keys[] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "
 /* USER CODE END 0 */
 
 /**
- * @brief  The application entry point.
- * @retval int
- */
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
 
@@ -145,8 +147,8 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim13);
 
   HAL_UART_Receive_IT(&huart1, uart1_rx_buf, 1);
-  HAL_UART_Receive_IT(&huart2, uart2_rx_buf, 1);
-  HAL_UART_Receive_IT(&huart3, uart3_rx_buf, 1);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buf, sizeof(uart2_rx_buf));
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, uart3_rx_buf, sizeof(uart3_rx_buf));
 
   // My_cJSON_Text();
 
@@ -189,6 +191,22 @@ int main(void)
 
     N_My_JsonGet((char *)uart1_rx_buf, &huart1);
     N_My_JsonGet((char *)uart2_rx_buf, &huart2);
+
+    /* USART3 累积接收：若上次 IDLE 后数据不完整，从断点继续 DMA */
+    if (uart3_rx_updated)
+    {
+      uart3_rx_updated = false;
+      /* 检查是否已收到完整 JSON（以 '}' 结尾） */
+      bool complete = (uart3_ins > 0 && uart3_rx_buf[uart3_ins - 1] == '}');
+      if (!complete && uart3_ins < (int16_t)(sizeof(uart3_rx_buf) - 10))
+      {
+        /* 数据不完整且还有空间：从断点继续 DMA 接收 */
+        uint16_t remaining = sizeof(uart3_rx_buf) - uart3_ins;
+        SCB_CleanInvalidateDCache_by_Addr((uint32_t *)&uart3_rx_buf[uart3_ins], remaining);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, &uart3_rx_buf[uart3_ins], remaining);
+      }
+    }
+
     N_My_JsonGet((char *)uart3_rx_buf, &huart3);
 
     if (joystick_screen_is_active())
@@ -202,29 +220,27 @@ int main(void)
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Supply configuration update enable
-   */
+  */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
   /** Configure the main internal regulator output voltage
-   */
+  */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
-  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY))
-  {
-  }
+  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
   /** Initializes the RCC Oscillators according to the specified parameters
-   * in the RCC_OscInitTypeDef structure.
-   */
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = 64;
@@ -244,8 +260,10 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 | RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
+                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
@@ -261,11 +279,15 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* USART3 DMA 发送忙标志，防止重复启动 DMA */
+static bool usart3_tx_dma_busy = false;
+/* USART3 TX DMA 发送缓冲区（静态，保证 DMA 访问期间有效） */
+static uint8_t joystick_tx_buf[6] = {0xAAU, 0, 0, 0, 0, 0x55U};
+
 static void USART3_Test_Task(void)
 {
   static uint32_t last_tick = 0U;
   joystick_state_t state;
-  uint8_t frame[6];
   uint8_t up = 0U;
   uint8_t down = 0U;
   uint8_t left = 0U;
@@ -277,6 +299,12 @@ static void USART3_Test_Task(void)
   }
 
   last_tick = HAL_GetTick();
+
+  /* 上一次 DMA 发送未完成则跳过本次 */
+  if (usart3_tx_dma_busy)
+  {
+    return;
+  }
 
   joystick_get_state(&state);
 
@@ -303,14 +331,22 @@ static void USART3_Test_Task(void)
     }
   }
 
-  frame[0] = 0xAAU;
-  frame[1] = up;
-  frame[2] = down;
-  frame[3] = left;
-  frame[4] = right;
-  frame[5] = 0x55U;
+  /* CPU 写入发送缓冲区 */
+  joystick_tx_buf[0] = 0xAAU;
+  joystick_tx_buf[1] = up;
+  joystick_tx_buf[2] = down;
+  joystick_tx_buf[3] = left;
+  joystick_tx_buf[4] = right;
+  joystick_tx_buf[5] = 0x55U;
 
-  (void)HAL_UART_Transmit(&huart3, frame, sizeof(frame), 100U);
+  /* STM32H7 D-Cache 一致性：CPU 写入在 Cache 中，Clean 后 DMA 才能读到 */
+  SCB_CleanDCache_by_Addr((uint32_t *)joystick_tx_buf, sizeof(joystick_tx_buf));
+
+  /* 非阻塞 DMA 发送，函数立即返回 */
+  if (HAL_UART_Transmit_DMA(&huart3, joystick_tx_buf, sizeof(joystick_tx_buf)) == HAL_OK)
+  {
+    usart3_tx_dma_busy = true;
+  }
 }
 
 static uint64_t times = 0;
@@ -352,6 +388,17 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
   }
 }
 
+/**
+ * @brief UART DMA 发送完成回调
+ */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART3)
+  {
+    usart3_tx_dma_busy = false; // 清除忙标志，允许下次发送
+  }
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
@@ -364,34 +411,61 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     // 重新启动接收
     HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[uart1_ins], 1); // 大小为1才会仅中断
   }
+  // USART2 / USART3 已切换为 DMA+IDLE 接收，由 HAL_UARTEx_RxEventCallback 处理
+}
+
+/**
+ * @brief USART2 DMA+IDLE 接收完成回调
+ * @param huart UART 句柄
+ * @param Size 接收到的字节数
+ */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
   if (huart->Instance == USART2)
   {
-    // USART2收到的数据同步转发一份到USART1
-    // HAL_UART_Transmit(&huart1, &uart2_rx_buf[uart2_ins], 1, 10);
+    // STM32H7 D-Cache 一致性：DMA 写入后，CPU 读取前必须使 Cache 失效
+    SCB_InvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
 
-    if (uart2_ins > 500 - 1)
+    if (Size > 0 && Size < sizeof(uart2_rx_buf))
     {
-      uart2_ins = 0;
+      uart2_rx_buf[Size] = '\0'; // 添加字符串终止符
+      uart2_ins = (int16_t)Size;  // 记录接收长度
     }
-    uart2_ins++;
-    // 重新启动接收
-    HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[uart2_ins], 1); // 大小为1才会仅中断
+    else if (Size >= sizeof(uart2_rx_buf))
+    {
+      // 缓冲区满，最后一个字节留给 '\0'
+      uart2_rx_buf[sizeof(uart2_rx_buf) - 1] = '\0';
+      uart2_ins = sizeof(uart2_rx_buf) - 1;
+    }
   }
-  if (huart->Instance == USART3)
+  else if (huart->Instance == USART3)
   {
-    if (uart3_ins > 500 - 1)
+    // STM32H7 D-Cache 一致性
+    SCB_InvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
+
+    if (Size > 0)
     {
-      uart3_ins = 0;
+      /* 累积模式：在已有数据后追加，不覆盖 */
+      int16_t new_pos = uart3_ins + (int16_t)Size;
+      if (new_pos < (int16_t)sizeof(uart3_rx_buf))
+      {
+        uart3_rx_buf[new_pos] = '\0';
+        uart3_ins = new_pos;
+      }
+      else
+      {
+        /* 缓冲区满 */
+        uart3_rx_buf[sizeof(uart3_rx_buf) - 1] = '\0';
+        uart3_ins = (int16_t)(sizeof(uart3_rx_buf) - 1);
+      }
+      uart3_rx_updated = true; // 通知主循环有新数据
     }
-    uart3_ins++;
-    // 重新启动接收
-    HAL_UART_Receive_IT(&huart3, &uart3_rx_buf[uart3_ins], 1); // 大小为1才会仅中断
   }
 }
 
 /* USER CODE END 4 */
 
-/* MPU Configuration */
+ /* MPU Configuration */
 
 void MPU_Config(void)
 {
@@ -401,7 +475,7 @@ void MPU_Config(void)
   HAL_MPU_Disable();
 
   /** Initializes and configures the Region and the memory to be protected
-   */
+  */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
   MPU_InitStruct.BaseAddress = 0x0;
@@ -417,12 +491,13 @@ void MPU_Config(void)
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+
 }
 
 /**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -436,12 +511,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

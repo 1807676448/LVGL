@@ -66,15 +66,19 @@ static void reset_uart_rx(UART_HandleTypeDef *usart)
     {
         memset(uart2_rx_buf, 0, sizeof(uart2_rx_buf));
         uart2_ins = 0;
-        HAL_UART_Abort_IT(&huart2);
-        HAL_UART_Receive_IT(&huart2, &uart2_rx_buf[0], 1);
+        // STM32H7 D-Cache 一致性：memset 写入了 Cache，Clean+Invalidate 后 DMA 才能安全写入
+        SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
+        HAL_UART_AbortReceive(&huart2);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buf, sizeof(uart2_rx_buf));
     }
     else if (usart == &huart3)
     {
         memset(uart3_rx_buf, 0, sizeof(uart3_rx_buf));
         uart3_ins = 0;
-        HAL_UART_Abort_IT(&huart3);
-        HAL_UART_Receive_IT(&huart3, &uart3_rx_buf[0], 1);
+        // STM32H7 D-Cache 一致性：Clean+Invalidate 后 DMA 才能安全写入
+        SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
+        HAL_UART_AbortReceive(&huart3);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, uart3_rx_buf, sizeof(uart3_rx_buf));
     }
 }
 

@@ -109,6 +109,8 @@ targets:
       - ../Core/lvgl/examples/scroll
       - ../Core/lvgl/examples/styles
       - ../Core/lvgl/examples
+    settings:
+      debugger: cortex-debug
     toolchain: AC6
     toolchainConfigMap:
       AC6:
