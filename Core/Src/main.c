@@ -190,7 +190,7 @@ int main(void)
     TimeChange();
 
     N_My_JsonGet((char *)uart1_rx_buf, &huart1);
-    printf("UART2 Received: %s\r\n", uart2_rx_buf);
+    // printf("UART2 Received: %s\r\n", uart2_rx_buf);
     N_My_JsonGet((char *)uart2_rx_buf, &huart2);
 
     /* USART3 累积接收：若上次 IDLE 后数据不完整，从断点继续 DMA */
@@ -343,10 +343,11 @@ static void USART3_Test_Task(void)
   /* STM32H7 D-Cache 一致性：CPU 写入在 Cache 中，Clean 后 DMA 才能读到 */
   SCB_CleanDCache_by_Addr((uint32_t *)joystick_tx_buf, sizeof(joystick_tx_buf));
 
-  /* 非阻塞 DMA 发送，函数立即返回 */
-  if (HAL_UART_Transmit_DMA(&huart3, joystick_tx_buf, sizeof(joystick_tx_buf)) == HAL_OK)
+  /* 非阻塞 DMA 发送：先置忙标志再启动，防止 DMA 瞬间完成后中断清零被覆盖 */
+  usart3_tx_dma_busy = true;
+  if (HAL_UART_Transmit_DMA(&huart3, joystick_tx_buf, sizeof(joystick_tx_buf)) != HAL_OK)
   {
-    usart3_tx_dma_busy = true;
+    usart3_tx_dma_busy = false; // 启动失败，回退标志
   }
 }
 

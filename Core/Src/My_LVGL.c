@@ -611,25 +611,25 @@ void create_screen_1(void)
         //     value_double = atof(value_text);
         // }
 
-        // 使用配置的格式显示数值
-        snprintf(value_text, sizeof(value_text), item_configs[i].display_format, value_double);
-
-        lv_obj_t *value_label = lv_label_create(item_cont);
-        lv_label_set_text(value_label, value_text);
-        lv_obj_set_width(value_label, 80);
-
         // 条形图：使用配置中的范围
         lv_obj_t *bar = lv_bar_create(item_cont);
         lv_bar_set_range(bar, item_configs[i].range_min, item_configs[i].range_max);
 
-        // 设置初始值（用数值中点作为演示，或者取查询到的值）
-        int bar_value = (item_configs[i].range_min + item_configs[i].range_max) / 2;
+        // 设置初始值：若 0 在有效范围内则归零，否则取范围最小值（进度条"空"位置）
+        int bar_value = item_configs[i].range_min;
         if (value_double >= item_configs[i].range_min && value_double <= item_configs[i].range_max)
         {
             bar_value = (int)value_double;
         }
 
         lv_bar_set_value(bar, bar_value, LV_ANIM_OFF);
+
+        // 使用配置的格式显示数值（与 bar 实际值保持一致）
+        snprintf(value_text, sizeof(value_text), item_configs[i].display_format, (double)bar_value);
+
+        lv_obj_t *value_label = lv_label_create(item_cont);
+        lv_label_set_text(value_label, value_text);
+        lv_obj_set_width(value_label, 80);
         lv_obj_set_flex_grow(bar, 1);
         lv_obj_add_style(bar, &bar_bg_style, LV_PART_MAIN);
         lv_obj_add_style(bar, &bar_indic_style, LV_PART_INDICATOR);
