@@ -277,12 +277,36 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
     if (Json_Data == NULL || usart == NULL)
         return;
 
+    /* 连续解析失败计数器（每个UART独立），用于防止垃圾数据导致接收卡死 */
+    static uint8_t uart1_fail_cnt = 0;
+    static uint8_t uart2_fail_cnt = 0;
+    static uint8_t uart3_fail_cnt = 0;
+    uint8_t *fail_cnt = NULL;
+    if (usart == &huart1)      fail_cnt = &uart1_fail_cnt;
+    else if (usart == &huart2) fail_cnt = &uart2_fail_cnt;
+    else if (usart == &huart3) fail_cnt = &uart3_fail_cnt;
+
     char *Json_start = NULL;
     char *Json_end = NULL;
     if (!find_complete_json(Json_Data, &Json_start, &Json_end))
     {
-        return; // 未找到完整JSON，可能是半包数据，等待下一次接收
+        /* 未找到完整JSON：若缓冲区非空则累计失败次数 */
+        if (fail_cnt != NULL && Json_Data[0] != '\0')
+        {
+            (*fail_cnt)++;
+            if (*fail_cnt >= 30)
+            {
+                printf("UART%d parse fail %d times, force clear buffer\r\n",
+                       (usart == &huart1) ? 1 : (usart == &huart2) ? 2 : 3, *fail_cnt);
+                *fail_cnt = 0;
+                reset_uart_rx(usart);
+            }
+        }
+        return;
     }
+
+    /* 找到完整JSON结构，重置失败计数器 */
+    if (fail_cnt != NULL) *fail_cnt = 0;
 
     size_t json_len = (size_t)(Json_end - Json_start + 1);
     if (json_len == 0 || json_len >= 500) // 限制最大长度，防止溢出

@@ -190,6 +190,7 @@ int main(void)
     TimeChange();
 
     N_My_JsonGet((char *)uart1_rx_buf, &huart1);
+    printf("UART2 Received: %s\r\n", uart2_rx_buf);
     N_My_JsonGet((char *)uart2_rx_buf, &huart2);
 
     /* USART3 累积接收：若上次 IDLE 后数据不完整，从断点继续 DMA */
