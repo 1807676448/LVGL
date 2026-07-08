@@ -15,7 +15,7 @@
 #include "Touch.h"
 #include "My_Data_New.h"
 
-#define DeviceHeartTime 30000 //设备心跳时间30秒
+#define DeviceHeartTime 60000 //设备心跳时间60秒
 
 //控制函数
 void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);

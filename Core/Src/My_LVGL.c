@@ -9,11 +9,9 @@
 #define TDS_MIN 0
 #define TDS_MAX 1000
 #define COD_MIN 0
-#define COD_MAX 100
-#define TOC_MIN 0
-#define TOC_MAX 100
+#define COD_MAX 20
 #define UV254_MIN 0
-#define UV254_MAX 100
+#define UV254_MAX 10
 #define PH_MIN 0
 #define PH_MAX 14
 
@@ -444,13 +442,13 @@ typedef struct
     lv_obj_t *value_label; // 显示数值的标签
 } screen1_item_t;
 
-#define SCREEN1_ITEM_TOTAL 11
+#define SCREEN1_ITEM_TOTAL 10
 
 /* ===== 各项数据的配置 ===== */
 static const DataItemConfig_t item_configs[SCREEN1_ITEM_TOTAL] = {
     {"TDS", TDS_MIN, TDS_MAX, DISPLAY_FORMAT_FLOAT_2},
     {"COD", COD_MIN, COD_MAX, DISPLAY_FORMAT_FLOAT_2},
-    {"TOC", TOC_MIN, TOC_MAX, DISPLAY_FORMAT_FLOAT_2},
+
     {"UV254", UV254_MIN, UV254_MAX, DISPLAY_FORMAT_FLOAT_2},
     {"pH", PH_MIN, PH_MAX, DISPLAY_FORMAT_FLOAT_1},
     {"Tem", TEM_MIN, TEM_MAX, DISPLAY_FORMAT_FLOAT_1},
@@ -474,7 +472,10 @@ static uint8_t screen1_item_count = 0;
 int update_screen1_item(const char *name, double value)
 {
     if (!screen_1)
+    {
+        printf("[LVGL] update_screen1_item: screen_1 is NULL!\r\n");
         return 2;
+    }
 
     // 查找对应的配置和项目
     int config_idx = -1;
@@ -488,11 +489,18 @@ int update_screen1_item(const char *name, double value)
     }
 
     if (config_idx == -1)
+    {
+        printf("[LVGL] update_screen1_item: name '%s' not found in config!\r\n", name ? name : "(null)");
         return 1; // 未找到配置
+    }
 
     // 检查值是否超出范围
     if (value < item_configs[config_idx].range_min || value > item_configs[config_idx].range_max)
+    {
+        printf("[LVGL] update_screen1_item: '%s' value %.2f out of range [%d, %d]!\r\n",
+               name, value, item_configs[config_idx].range_min, item_configs[config_idx].range_max);
         return 3;
+    }
 
     for (uint8_t i = 0; i < screen1_item_count; i++)
     {
@@ -508,9 +516,12 @@ int update_screen1_item(const char *name, double value)
                 snprintf(buf, sizeof(buf), item_configs[config_idx].display_format, value);
                 lv_label_set_text(screen1_items[i].value_label, buf);
             }
+            printf("[LVGL] update_screen1_item: '%s' = %.2f OK\r\n", name, value);
             return 0;
         }
     }
+    printf("[LVGL] update_screen1_item: '%s' found in config but no matching screen item (screen1_item_count=%d)\r\n",
+           name, screen1_item_count);
     return 1;
 }
 
@@ -577,7 +588,8 @@ void create_screen_1(void)
     // lv_style_set_bg_color(&bar_indic_style, lv_color_hex(0xDC3545)); // 或鲜艳红色
     lv_style_set_bg_opa(&bar_indic_style, LV_OPA_COVER); // 设置填充不透明度为完全不透明
 
-    const char *names[SCREEN1_ITEM_TOTAL] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
+    /* 显示名称（中文）与内部键名（英文，用于JSON匹配）分离 */
+    const char *names[SCREEN1_ITEM_TOTAL] = {"TDS", "COD", "UV254", "pH", "水温", "浊度", "气温", "空气湿度", "气压", "海拔"};
     screen1_item_count = 0;
 
     // 创建全部数据项
@@ -589,16 +601,16 @@ void create_screen_1(void)
         lv_obj_set_flex_align(item_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_clear_flag(item_cont, LV_OBJ_FLAG_SCROLLABLE);
 
-        // 名称标签
+        // 名称标签（中文显示）
         lv_obj_t *label = lv_label_create(item_cont);
         lv_label_set_text(label, names[i]);
-        lv_obj_set_width(label, 70);
+        lv_obj_set_width(label, 78);
 
         // 数值标签（从My_Data查询初始值）
         char value_text[32];
         double value_double = 0.0;
 
-        // if (My_SendJson_QueryValue(names[i], value_text, sizeof(value_text)))
+        // if (My_SendJson_QueryValue(item_configs[i].name, value_text, sizeof(value_text)))
         // {
         //     // 查询成功，移除JSON引号并转换为数字
         //     if (value_text[0] == '"')
@@ -635,8 +647,8 @@ void create_screen_1(void)
         lv_obj_add_style(bar, &bar_indic_style, LV_PART_INDICATOR);
         lv_obj_set_height(bar, 20);
 
-        // 保存映射
-        screen1_items[i].name = names[i];
+        // 保存映射：内部键名使用英文（item_configs），与JSON数据键名一致
+        screen1_items[i].name = item_configs[i].name;
         screen1_items[i].bar = bar;
         screen1_items[i].value_label = value_label;
         screen1_item_count++;
@@ -661,7 +673,7 @@ typedef struct
 } DeviceStatus_t;
 
 #define DEVICE_COUNT 4
-#define DEVICE_TIMEOUT_MS 3000 // 3秒超时
+#define DEVICE_TIMEOUT_MS 6000 // 6秒超时
 
 // 初始化设备列表
 static DeviceStatus_t devices[DEVICE_COUNT] = {
@@ -1208,7 +1220,7 @@ void create_screen_3(void)
 
 // --- 项目信息常量 (英文) ---
 static const char *PROJECT_NAME = "智能环境监测系统";                // 项目名称
-static const char *AUTHORS[] = {"夏浩然", "吴萧杨", "张生文"};       // 作者列表
+static const char *AUTHORS[] = {"+++", "+++", "+++"};       // 作者列表
 static const int NUM_AUTHORS = sizeof(AUTHORS) / sizeof(AUTHORS[0]); // 作者数量
 static const char *CREATION_TIME = "2025年10月27日";                 // 创建时间
 

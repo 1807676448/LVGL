@@ -62,6 +62,7 @@ void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
 static void USART3_Test_Task(void);
+static void My_TimerTask_Handler(void);
 
 /* USER CODE END PFP */
 
@@ -76,17 +77,24 @@ AXI_SRAM_VAR static uint8_t buf2[OneStepSize * OnePointSize_Lvgl] = {1}; // 第�
 
 void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
 
-uint8_t uart1_rx_buf[500]; // 接收缓冲区
-int16_t uart1_ins;
-uint8_t uart2_rx_buf[500]; // 接收缓冲区
-int16_t uart2_ins;
-uint8_t uart3_rx_buf[500]; // 接收缓冲区
-int16_t uart3_ins;
+/* ===== UART 接收缓冲区：必须 32 字节对齐（STM32H7 D-Cache Line = 32B）===== */
+/* 不对齐会导致 SCB_InvalidateDCache 覆盖相邻变量的 Cache Line，造成数据随机损坏 */
+__attribute__((aligned(32))) volatile uint8_t uart1_rx_buf[500];
+volatile int16_t uart1_ins;
+__attribute__((aligned(32))) volatile uint8_t uart2_rx_buf[500];
+volatile int16_t uart2_ins;
+__attribute__((aligned(32))) volatile uint8_t uart3_rx_buf[500];
+volatile int16_t uart3_ins;
 /* USART3 RX DMA 累积接收标志：ISR 置位，主循环处理 */
-static bool uart3_rx_updated = false;
+static volatile bool uart3_rx_updated = false;
+
+/* ===== 定时器触发标志（替代 ISR 中的阻塞操作）===== */
+static volatile bool flag_send_water_data = false;
+static volatile bool flag_request_time = false;
+static volatile bool flag_report_status = false;
 
 uint64_t UNX_Now_Time = 0; // 当前时间戳
-static const char *keys[] = {"TDS", "COD", "TOC", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
+static const char *keys[] = {"TDS", "COD", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
 
 /* USER CODE END 0 */
 
@@ -146,9 +154,9 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_TIM_Base_Start_IT(&htim13);
 
-  HAL_UART_Receive_IT(&huart1, uart1_rx_buf, 1);
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buf, sizeof(uart2_rx_buf));
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, uart3_rx_buf, sizeof(uart3_rx_buf));
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)uart1_rx_buf, 1);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, (uint8_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
 
   // My_cJSON_Text();
 
@@ -189,6 +197,9 @@ int main(void)
 
     TimeChange();
 
+    /* 处理定时器触发的周期性任务（替代 ISR 中的阻塞操作）*/
+    My_TimerTask_Handler();
+
     N_My_JsonGet((char *)uart1_rx_buf, &huart1);
     // printf("UART2 Received: %s\r\n", uart2_rx_buf);
     N_My_JsonGet((char *)uart2_rx_buf, &huart2);
@@ -204,15 +215,44 @@ int main(void)
         /* 数据不完整且还有空间：从断点继续 DMA 接收 */
         uint16_t remaining = sizeof(uart3_rx_buf) - uart3_ins;
         SCB_CleanInvalidateDCache_by_Addr((uint32_t *)&uart3_rx_buf[uart3_ins], remaining);
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, &uart3_rx_buf[uart3_ins], remaining);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, (uint8_t *)&uart3_rx_buf[uart3_ins], remaining);
       }
     }
 
     N_My_JsonGet((char *)uart3_rx_buf, &huart3);
 
-    if (joystick_screen_is_active())
+    /* 遥杆遥控模式：进入/退出时向共享 USART3 总线的 Water1 发送静默/恢复指令 */
     {
-      USART3_Test_Task();
+      static bool was_active = false;
+      bool is_active = joystick_screen_is_active();
+
+      if (is_active && !was_active)
+      {
+        /* 遥控启动 → 令 Water1 停止 USART3 数据发送（重复3次防丢） */
+        uint8_t mute_cmd[] = {0xDD, 0xDD, 0xDD};
+        for (int i = 0; i < 3; i++)
+        {
+          HAL_UART_Transmit(&huart3, mute_cmd, 3, 100);
+        }
+        printf("[REMOTE] Water1 muted (x3)\r\n");
+      }
+      else if (!is_active && was_active)
+      {
+        /* 遥控退出 → 令 Water1 恢复 USART3 数据发送（重复3次防丢） */
+        uint8_t unmute_cmd[] = {0xEE, 0xEE, 0xEE};
+        for (int i = 0; i < 3; i++)
+        {
+          HAL_UART_Transmit(&huart3, unmute_cmd, 3, 100);
+        }
+        printf("[REMOTE] Water1 unmuted (x3)\r\n");
+      }
+
+      was_active = is_active;
+
+      if (is_active)
+      {
+        USART3_Test_Task();
+      }
     }
 
     // HAL_Delay(500);
@@ -281,13 +321,17 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 /* USART3 DMA 发送忙标志，防止重复启动 DMA */
-static bool usart3_tx_dma_busy = false;
-/* USART3 TX DMA 发送缓冲区（静态，保证 DMA 访问期间有效） */
-static uint8_t joystick_tx_buf[6] = {0xAAU, 0, 0, 0, 0, 0x55U};
+static volatile bool usart3_tx_dma_busy = false;
+/* USART3 TX DMA 发送缓冲区（32 字节对齐，确保 SCB_CleanDCache 安全）*/
+__attribute__((aligned(32))) static uint8_t joystick_tx_buf[6] = {0xAAU, 0, 0, 0, 0, 0x55U};
 
 static void USART3_Test_Task(void)
 {
   static uint32_t last_tick = 0U;
+  static uint8_t last_up    = 0xFFU; /* 上次成功发送的值，0xFF 哨兵确保首帧必发 */
+  static uint8_t last_down  = 0xFFU;
+  static uint8_t last_left  = 0xFFU;
+  static uint8_t last_right = 0xFFU;
   joystick_state_t state;
   uint8_t up = 0U;
   uint8_t down = 0U;
@@ -332,6 +376,12 @@ static void USART3_Test_Task(void)
     }
   }
 
+  /* 遥杆指令无变化则跳过发送，为共享 USART3 的其他设备让出带宽 */
+  if (up == last_up && down == last_down && left == last_left && right == last_right)
+  {
+    return;
+  }
+
   /* CPU 写入发送缓冲区 */
   joystick_tx_buf[0] = 0xAAU;
   joystick_tx_buf[1] = up;
@@ -348,6 +398,15 @@ static void USART3_Test_Task(void)
   if (HAL_UART_Transmit_DMA(&huart3, joystick_tx_buf, sizeof(joystick_tx_buf)) != HAL_OK)
   {
     usart3_tx_dma_busy = false; // 启动失败，回退标志
+    /* DMA 启动失败不更新 last_*，下次循环会重试发送 */
+  }
+  else
+  {
+    /* 发送成功，记录本次指令值供下次比较 */
+    last_up    = up;
+    last_down  = down;
+    last_left  = left;
+    last_right = right;
   }
 }
 
@@ -363,24 +422,50 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM13)
   {
     times++;
+    /* ⚠️ 严禁在 ISR 中调用 printf / cJSON / HAL_UART_Transmit 等阻塞/非重入函数！
+     *   仅设置标志位，实际工作由主循环中的 My_TimerTask_Handler() 完成。
+     */
     if (times % SendData_Time == 0)
     {
-      printf("Send water quality data\r\n");
-      // Send_JSON_KeyValue(keys, 11, &huart1);
-      Send_JSON_KeyValue(keys, 11, &huart2);
+      flag_send_water_data = true;
     }
     if (times % 10000 == 123)
     {
-      printf("Request time stamp\r\n\r\n");
-      MQTT_Request_Time(&huart2);
+      flag_request_time = true;
     }
     if (times % StatusReport_Time == 0)
     {
-      MQTT_Report_Status(&huart2, "online", (uint32_t)(HAL_GetTick() / 1000U));
+      flag_report_status = true;
     }
   }
 }
 // SPI发送完成回调函数
+
+/**
+ * @brief 处理定时器触发的周期性任务（在主循环中调用，非 ISR 上下文）
+ * @note 替代原来在 TIM13 ISR 中直接调用的 printf / cJSON / HAL_UART_Transmit
+ */
+static void My_TimerTask_Handler(void)
+{
+  if (flag_send_water_data)
+  {
+    flag_send_water_data = false;
+    printf("Send water quality data\r\n");
+    Send_JSON_KeyValue(keys, 10, &huart2);
+  }
+  if (flag_request_time)
+  {
+    flag_request_time = false;
+    printf("Request time stamp\r\n\r\n");
+    MQTT_Request_Time(&huart2);
+  }
+  if (flag_report_status)
+  {
+    flag_report_status = false;
+    MQTT_Report_Status(&huart2, "online", (uint32_t)(HAL_GetTick() / 1000U));
+  }
+}
+
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1)
@@ -405,13 +490,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
   {
-    if (uart1_ins > 500 - 1)
+    /* 缓冲区满保护：索引到达 buf 末尾时回绕到 0 */
+    if (uart1_ins >= (int16_t)(sizeof(uart1_rx_buf) - 1))
     {
-      uart1_ins = 0;
+      uart1_ins = -1; /* 循环后会变成 0 */
     }
     uart1_ins++;
+    uart1_rx_buf[uart1_ins] = '\0'; /* 确保后续字节为字符串终止符 */
     // 重新启动接收
-    HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[uart1_ins], 1); // 大小为1才会仅中断
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uart1_rx_buf[uart1_ins], 1); // 大小为1才会仅中断
   }
   // USART2 / USART3 已切换为 DMA+IDLE 接收，由 HAL_UARTEx_RxEventCallback 处理
 }
@@ -425,8 +512,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
   if (huart->Instance == USART2)
   {
-    // STM32H7 D-Cache 一致性：DMA 写入后，CPU 读取前必须使 Cache 失效
-    SCB_InvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
+    /* STM32H7 D-Cache 一致性：仅 Invalidate 实际接收范围（缓冲区已 32B 对齐，安全）*/
+    if (Size > 0)
+    {
+      SCB_InvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, (int32_t)Size);
+    }
 
     if (Size > 0 && Size < sizeof(uart2_rx_buf))
     {
@@ -442,22 +532,29 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
   }
   else if (huart->Instance == USART3)
   {
-    // STM32H7 D-Cache 一致性
-    SCB_InvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
+    /* STM32H7 D-Cache 一致性：仅 Invalidate 实际接收范围 */
+    if (Size > 0)
+    {
+      SCB_InvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, (int32_t)Size);
+    }
 
     if (Size > 0)
     {
       /* 累积模式：在已有数据后追加，不覆盖 */
-      int16_t new_pos = uart3_ins + (int16_t)Size;
+      int16_t current_pos = uart3_ins; /* 原子快照，防止主循环竞态 */
+      int16_t new_pos = current_pos + (int16_t)Size;
       if (new_pos < (int16_t)sizeof(uart3_rx_buf))
       {
         uart3_rx_buf[new_pos] = '\0';
+        /* 使用 __DSB 确保写入完成后再更新索引 */
+        __DSB();
         uart3_ins = new_pos;
       }
       else
       {
         /* 缓冲区满 */
         uart3_rx_buf[sizeof(uart3_rx_buf) - 1] = '\0';
+        __DSB();
         uart3_ins = (int16_t)(sizeof(uart3_rx_buf) - 1);
       }
       uart3_rx_updated = true; // 通知主循环有新数据

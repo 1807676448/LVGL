@@ -25,12 +25,12 @@
 #define MQTT_TOPIC_COMMAND_INDEX 2
 #define MQTT_TOPIC_DOWN_INDEX 0
 //外部变量引用区
-extern uint8_t uart1_rx_buf[500]; // 接收缓冲区
-extern int16_t uart1_ins;
-extern uint8_t uart2_rx_buf[500]; // 接收缓冲区
-extern int16_t uart2_ins;
-extern uint8_t uart3_rx_buf[500]; // 接收缓冲区
-extern int16_t uart3_ins;
+extern volatile uint8_t uart1_rx_buf[500]; // 接收缓冲区
+extern volatile int16_t uart1_ins;
+extern volatile uint8_t uart2_rx_buf[500]; // 接收缓冲区
+extern volatile int16_t uart2_ins;
+extern volatile uint8_t uart3_rx_buf[500]; // 接收缓冲区
+extern volatile int16_t uart3_ins;
 
 // 配置设备结构体（存储设备状态）
 typedef struct {

@@ -57,28 +57,36 @@ static void reset_uart_rx(UART_HandleTypeDef *usart)
 {
     if (usart == &huart1)
     {
-        memset(uart1_rx_buf, 0, sizeof(uart1_rx_buf));
+        memset((void *)uart1_rx_buf, 0, sizeof(uart1_rx_buf));
         uart1_ins = 0;
-        HAL_UART_Abort_IT(&huart1);
-        HAL_UART_Receive_IT(&huart1, &uart1_rx_buf[0], 1);
+        HAL_UART_AbortReceive_IT(&huart1);
+        HAL_UART_Receive_IT(&huart1, (uint8_t *)&uart1_rx_buf[0], 1);
     }
     else if (usart == &huart2)
     {
-        memset(uart2_rx_buf, 0, sizeof(uart2_rx_buf));
+        int16_t len = uart2_ins;
+        memset((void *)uart2_rx_buf, 0, sizeof(uart2_rx_buf));
         uart2_ins = 0;
-        // STM32H7 D-Cache 一致性：memset 写入了 Cache，Clean+Invalidate 后 DMA 才能安全写入
-        SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
+        /* STM32H7 D-Cache：仅 Clean+Invalidate 实际使用范围（缓冲区已 32B 对齐）*/
+        if (len > 0)
+        {
+            SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart2_rx_buf, (int32_t)len);
+        }
         HAL_UART_AbortReceive(&huart2);
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buf, sizeof(uart2_rx_buf));
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *)uart2_rx_buf, sizeof(uart2_rx_buf));
     }
     else if (usart == &huart3)
     {
-        memset(uart3_rx_buf, 0, sizeof(uart3_rx_buf));
+        int16_t len = uart3_ins;
+        memset((void *)uart3_rx_buf, 0, sizeof(uart3_rx_buf));
         uart3_ins = 0;
-        // STM32H7 D-Cache 一致性：Clean+Invalidate 后 DMA 才能安全写入
-        SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
+        /* STM32H7 D-Cache：仅 Clean+Invalidate 实际使用范围（缓冲区已 32B 对齐）*/
+        if (len > 0)
+        {
+            SCB_CleanInvalidateDCache_by_Addr((uint32_t *)uart3_rx_buf, (int32_t)len);
+        }
         HAL_UART_AbortReceive(&huart3);
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, uart3_rx_buf, sizeof(uart3_rx_buf));
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart3, (uint8_t *)uart3_rx_buf, sizeof(uart3_rx_buf));
     }
 }
 

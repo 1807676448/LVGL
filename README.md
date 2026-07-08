@@ -936,8 +936,108 @@ HAL_SPI_Transmit_DMA(&hspi1, dma_buffer, chunk_pixel_count * 3);
 
 ---
 
-> **技术支持**: 如需扩展以下文档可在 `docs/` 目录创建:
-> - 《串口协议字段手册》
-> - 《UI 页面与控件索引表》
-> - 《故障定位手册 (黑屏/花屏/卡顿/串口异常)》
-> - 《触摸屏校准操作指南》
+## 20. 心跳上报接入指南
+
+> 本节整合了原 `docs/heartbeat-guide.md` 的内容，作为新增外部设备接入时的唯一说明入口。
+
+### 20.1 目标与数据流
+
+当前系统的心跳/设备状态管理分为三层：
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  第3层: UI 显示 (My_LVGL.c)                              │
+│  ─ DeviceStatus_t devices[4]  ← 设备在线状态 + UI 对象   │
+│  ─ lv_timer: sync_device_status_from_data (1秒)          │
+│  ─ lv_timer: device_check_timer_cb (超时检查)            │
+├──────────────────────────────────────────────────────────┤
+│  第2层: 数据层 (My_Data_New.c)                           │
+│  ─ device_status_t device_list[4]  ← JSON 解析后的状态   │
+│  ─ N_My_JsonGet() 解析 UART 数据 → 更新 device_list[]    │
+├──────────────────────────────────────────────────────────┤
+│  第1层: 物理层 (UART + 4G模块)                           │
+│  ─ USART1/2/3 接收外部设备发来的 JSON 心跳包             │
+│  ─ USART2 通过 4G 模块走 MQTT 协议与云端通信             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**心跳数据流：** 外部设备 → UART → N_My_JsonGet() → device_list[].valid=true → sync_device_status_from_data() → devices[].is_online=true, last_heartbeat=now → device_check_timer_cb() → 超时自动标记 offline。
+
+### 20.2 需要修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| `Core/Inc/My_Data_New.h` | 增加 `Device_Max` 宏（如需扩容）；声明新函数 |
+| `Core/Inc/My_LVGL.h` | 增加设备数量/时间常量；声明新函数 |
+| `Core/Src/My_Data_New.c` | 扩展 `device_list[]`；实现心跳上报函数；实现设备上线通知函数 |
+| `Core/Src/My_LVGL.c` | 扩展 `devices[]` 数组；增加 UI 卡片创建；更新定时器逻辑 |
+| `Core/Src/main.c` | 初始化时调用设备上线通知；主循环中处理心跳上报定时 |
+
+### 20.3 关键常量与扩容规则
+
+```c
+#define Device_Max 4
+#define DeviceHeartTime 60000
+#define DEVICE_COUNT Device_Max
+```
+
+如果要增加设备数量，只需要同步修改 `Device_Max`、`DEVICE_COUNT`，并在 `My_Data_New.c` 与 `My_LVGL.c` 中扩展对应数组初始化即可。
+
+### 20.4 上报函数建议
+
+在 `My_Data_New.c` 中增加两类接口：
+
+```c
+void MQTT_Report_Device_Heartbeat(UART_HandleTypeDef *huart,
+                                   const char *device_id,
+                                   const char *status);
+void UART_Report_Device_Heartbeat(UART_HandleTypeDef *huart,
+                                   const char *device_id,
+                                   const char *status);
+```
+
+前者通过 `huart2` 走 MQTT/4G 上报云端，后者用于本地 UART 广播。两者都建议统一发送 `{"device_id":"device_003","status":"online"}` 这类 JSON。
+
+### 20.5 UI 与超时检查
+
+`My_LVGL.c` 中的设备监控页建议保持“数据层同步 + 定时超时检测”的结构：
+
+- `create_screen_2()` 通过循环创建设备卡片，数量由 `DEVICE_COUNT` 决定
+- `sync_device_status_from_data()` 每秒把 `device_list[]` 同步到 UI
+- `device_check_timer_cb()` 负责超时离线判断，建议检查周期短于心跳超时的一半
+
+如果设备数量增加到 6 个以上，建议把卡片布局改成可滚动容器或调小单卡宽度。
+
+### 20.6 接入步骤
+
+1. 在 `My_Data_New.h` 中确认或扩展 `Device_Max`。
+2. 在 `My_Data_New.c` 与 `My_LVGL.c` 中同步扩展设备数组。
+3. 在 `My_Data_New.c` 中补充心跳上报函数。
+4. 在 `main.c` 中确认相关 UART 都已经调用 `N_My_JsonGet()`。
+5. 用 `{"device_id":"device_005","status":"online"}` 这类 JSON 验证设备是否能被识别并在 `screen_2` 上显示在线。
+
+### 20.7 示例：添加 `device_005`
+
+```c
+#define Device_Max 5
+
+device_status_t device_list[Device_Max] = {
+    {1, "offline", false},
+    {2, "offline", false},
+    {3, "offline", false},
+    {4, "offline", false},
+    {5, "offline", false},
+};
+
+static DeviceStatus_t devices[DEVICE_COUNT] = {
+    {.device_id = "device_001", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_002", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_003", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_004", .is_online = false, .last_heartbeat = 0},
+    {.device_id = "device_005", .is_online = false, .last_heartbeat = 0},
+};
+```
+
+---
+
+> **技术支持**: 如需扩展其他说明，建议直接继续补充到本 README 的对应章节中，避免再拆分为独立文档。
