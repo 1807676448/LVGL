@@ -38,6 +38,8 @@ virtualFolder:
                 - path: ../Core/Src/My_Data.c
                 - path: ../Core/Src/cJSON.c
                 - path: ../Core/Src/My_Data_New.c
+                - path: ../Core/Src/w25q64.c
+                - path: ../Core/Src/lv_font_flash.c
               folders: []
     - name: Drivers
       files: []

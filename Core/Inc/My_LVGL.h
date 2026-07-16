@@ -27,6 +27,7 @@ void setup_ui(void);
 //接口函数声明
 void update_main_screen_info(const char *new_time, const char *new_date, const char *new_weather, const char *new_welcome_msg);
 int update_screen1_item(const char *name, double value);
+void update_screen4_dshelp(void);
 
 typedef enum
 {

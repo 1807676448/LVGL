@@ -32,6 +32,7 @@
 #include "My_Debug.h"
 #include "My_LVGL.h"
 #include "My_Data_New.h"
+#include "w25q64.h"
 #include <stdio.h>
 #include <time.h>
 /* USER CODE END Includes */
@@ -96,12 +97,92 @@ static volatile bool flag_report_status = false;
 uint64_t UNX_Now_Time = 0; // 当前时间戳
 static const char *keys[] = {"TDS", "COD", "UV254", "pH", "Tem", "Tur", "air_temp", "air_hum", "pressure", "altitude"};
 
+/* ===== W25Q64 烧录模式 ===== */
+static volatile bool g_w25q64_burn_mode = false;
+
+/* ISR 直接处理协议, Flash 写入也在 ISR 中完成 */
+static uint8_t  burn_buf[2060];   /* 数据缓冲 */
+static uint16_t burn_idx;
+static uint8_t  burn_st;          /* 0=cmd, 1=info, 2=data */
+static uint32_t burn_addr;
+static uint32_t burn_total;
+static uint16_t burn_dlen;
+static uint16_t burn_dcnt;
+static uint32_t burn_daddr;
+static uint8_t  burn_dcrc;
+
+static void burn_tx(uint8_t b) {
+    while ((USART1->ISR & USART_ISR_TXE_TXFNF) == 0);
+    USART1->TDR = b;
+}
+
+/* ISR 每收到一字节调用 */
+static void burn_isr_feed(uint8_t b)
+{
+    switch (burn_st) {
+    case 0:
+        if (b == 0x55) { burn_tx(0xAA); }
+        else if (b == 0xA0) { burn_st = 1; burn_idx = 0; }
+        else if (b == 0xA5) { burn_st = 2; burn_idx = 0; burn_buf[0] = 0xA5; }
+        else if (b == 0xA1) {
+            uint8_t vb[256]; W25Q64_ReadData(burn_addr, vb, 256);
+            uint8_t ok = 0; for (int i=0;i<256;i++) if(vb[i]!=0xFF){ok=1;break;}
+            burn_tx(ok?0x06:0x15); g_w25q64_burn_mode = false;
+        }
+        break;
+    case 1: /* INFO: PC发 [0xA0][addr_4B][size_4B][crc_1B] */
+        burn_buf[burn_idx++] = b;
+        if (burn_idx >= 9) {
+            burn_st = 0; burn_idx = 0;
+            /* CRC = XOR of addr+size (前8字节), 与 Python 一致 */
+            uint8_t crc = 0; for (int i=0;i<8;i++) crc ^= burn_buf[i];
+            if (crc == burn_buf[8]) {
+                burn_addr  = ((uint32_t)burn_buf[0]<<24)|((uint32_t)burn_buf[1]<<16)|((uint32_t)burn_buf[2]<<8)|burn_buf[3];
+                burn_total = ((uint32_t)burn_buf[4]<<24)|((uint32_t)burn_buf[5]<<16)|((uint32_t)burn_buf[6]<<8)|burn_buf[7];
+                W25Q64_EraseRange(burn_addr, burn_total);
+                burn_tx(0x06);
+            } else { burn_tx(0x15); }
+        }
+        break;
+    case 2: /* DATA: PC发 [0xA5][addr_4B][len_2B][data_N][crc_1B], 0xA5 已被状态0消费 */
+        /* burn_buf 布局: [0..3]=addr, [4..5]=len, [6..6+N-1]=data */
+        burn_buf[burn_idx++] = b;
+        if (burn_idx == 4) {
+            /* 收到4字节地址 */
+        } else if (burn_idx == 6) {
+            /* 收到2字节长度 */
+            burn_daddr = ((uint32_t)burn_buf[0]<<24)|((uint32_t)burn_buf[1]<<16)|((uint32_t)burn_buf[2]<<8)|burn_buf[3];
+            burn_dlen  = ((uint16_t)burn_buf[4]<<8) | burn_buf[5];
+            burn_dcnt  = 0;
+        } else if (burn_idx >= 7) {
+            /* 收到数据字节 (burn_idx==7 是第一个数据字节) */
+            uint16_t data_idx = burn_idx - 7;
+            if (data_idx < burn_dlen && data_idx < 2048) {
+                burn_buf[6 + data_idx] = b;  /* 从 burn_buf[6] 开始存数据 */
+            }
+            /* 判断是否收完: 地址4B + 长度2B + 数据N字节 + CRC1B */
+            if (burn_idx >= (uint16_t)(7 + burn_dlen)) {
+                /* 收到 CRC 字节 */
+                burn_st = 0; burn_idx = 0;
+                /* CRC = XOR of data bytes only (与Python一致) */
+                uint8_t crc = 0;
+                for (uint16_t i = 0; i < burn_dlen; i++) crc ^= burn_buf[6 + i];
+                if (crc == b) {
+                    W25Q64_WriteNoErase(burn_daddr, &burn_buf[6], burn_dlen);
+                    burn_tx(0x06);
+                } else { burn_tx(0x15); }
+            }
+        }
+        break;
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -160,6 +241,45 @@ int main(void)
 
   // My_cJSON_Text();
 
+  W25Q64_Init();
+  {
+      uint8_t MID; uint16_t DID;
+      for (int retry = 0; retry < 5; retry++) {
+          W25Q64_ReadID(&MID, &DID);
+          if (MID == 0xEF && DID == 0x4017) break;
+          HAL_Delay(10);
+      }
+      printf("[W25Q64] MID=0x%02X DID=0x%04X\r\n", MID, DID);
+      if (MID == 0xEF && DID == 0x4017) {
+#if 0  /* 1=烧录模式, 0=跳过 */
+          printf("[W25Q64] 烧录模式, 请运行 burn_font_to_flash.py\r\n");
+          g_w25q64_burn_mode = true;
+          while (g_w25q64_burn_mode) { HAL_Delay(100); }
+          printf("[W25Q64] 烧录完成!\r\n");
+#endif
+
+          /* === 验证 Flash 数据: 打印前256字节和几个字形的位图 === */
+          printf("\r\n========== W25Q64 Flash Dump ==========\r\n");
+          {
+              uint8_t dump[256];
+              W25Q64_ReadData(0x000000, dump, 256);
+              printf("[Flash 0x000000~0x0000FF]:\r\n");
+              for (int i = 0; i < 256; i += 16) {
+                  printf("  %04X: ", i);
+                  for (int j = 0; j < 16 && (i+j) < 256; j++) {
+                      printf("%02X ", dump[i+j]);
+                  }
+                  printf("\r\n");
+              }
+              /* 对比: 显示开头的几个 ASCII 可识别模式 */
+              printf("[Flash 前32字节 raw]: ");
+              for (int i = 0; i < 32; i++) printf("%02X ", dump[i]);
+              printf("\r\n");
+          }
+          printf("========== Flash Dump End ==========\r\n\r\n");
+      }
+  }
+
   LCD_Init(); // 初始化LCD
   TP_Init();
 
@@ -200,11 +320,11 @@ int main(void)
     /* 处理定时器触发的周期性任务（替代 ISR 中的阻塞操作）*/
     My_TimerTask_Handler();
 
-    N_My_JsonGet((char *)uart1_rx_buf, &huart1);
-    // printf("UART2 Received: %s\r\n", uart2_rx_buf);
-    N_My_JsonGet((char *)uart2_rx_buf, &huart2);
+      N_My_JsonGet((char *)uart1_rx_buf, &huart1);
+      N_My_JsonGet((char *)uart2_rx_buf, &huart2);
 
     /* USART3 累积接收：若上次 IDLE 后数据不完整，从断点继续 DMA */
+    
     if (uart3_rx_updated)
     {
       uart3_rx_updated = false;
@@ -261,27 +381,29 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Supply configuration update enable
-  */
+   */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
-  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY))
+  {
+  }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = 64;
@@ -301,10 +423,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
-                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 | RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
@@ -328,9 +448,9 @@ __attribute__((aligned(32))) static uint8_t joystick_tx_buf[6] = {0xAAU, 0, 0, 0
 static void USART3_Test_Task(void)
 {
   static uint32_t last_tick = 0U;
-  static uint8_t last_up    = 0xFFU; /* 上次成功发送的值，0xFF 哨兵确保首帧必发 */
-  static uint8_t last_down  = 0xFFU;
-  static uint8_t last_left  = 0xFFU;
+  static uint8_t last_up = 0xFFU; /* 上次成功发送的值，0xFF 哨兵确保首帧必发 */
+  static uint8_t last_down = 0xFFU;
+  static uint8_t last_left = 0xFFU;
   static uint8_t last_right = 0xFFU;
   joystick_state_t state;
   uint8_t up = 0U;
@@ -403,9 +523,9 @@ static void USART3_Test_Task(void)
   else
   {
     /* 发送成功，记录本次指令值供下次比较 */
-    last_up    = up;
-    last_down  = down;
-    last_left  = left;
+    last_up = up;
+    last_down = down;
+    last_left = left;
     last_right = right;
   }
 }
@@ -490,17 +610,23 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
   {
-    /* 缓冲区满保护：索引到达 buf 末尾时回绕到 0 */
+    /* 烧录模式: 字节存入环形缓冲, 主循环处理 */
+    if (g_w25q64_burn_mode)
+    {
+      burn_isr_feed((uint8_t)(uart1_rx_buf[0]));
+      HAL_UART_Receive_IT(&huart1, (uint8_t *)uart1_rx_buf, 1);
+      return;
+    }
+
+    /* 正常模式: 缓冲区累积 */
     if (uart1_ins >= (int16_t)(sizeof(uart1_rx_buf) - 1))
     {
-      uart1_ins = -1; /* 循环后会变成 0 */
+      uart1_ins = -1;
     }
     uart1_ins++;
-    uart1_rx_buf[uart1_ins] = '\0'; /* 确保后续字节为字符串终止符 */
-    // 重新启动接收
-    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uart1_rx_buf[uart1_ins], 1); // 大小为1才会仅中断
+    uart1_rx_buf[uart1_ins] = '\0';
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uart1_rx_buf[uart1_ins], 1);
   }
-  // USART2 / USART3 已切换为 DMA+IDLE 接收，由 HAL_UARTEx_RxEventCallback 处理
 }
 
 /**
@@ -521,7 +647,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     if (Size > 0 && Size < sizeof(uart2_rx_buf))
     {
       uart2_rx_buf[Size] = '\0'; // 添加字符串终止符
-      uart2_ins = (int16_t)Size;  // 记录接收长度
+      uart2_ins = (int16_t)Size; // 记录接收长度
     }
     else if (Size >= sizeof(uart2_rx_buf))
     {
@@ -564,7 +690,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 
 /* USER CODE END 4 */
 
- /* MPU Configuration */
+/* MPU Configuration */
 
 void MPU_Config(void)
 {
@@ -574,7 +700,7 @@ void MPU_Config(void)
   HAL_MPU_Disable();
 
   /** Initializes and configures the Region and the memory to be protected
-  */
+   */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
   MPU_InitStruct.BaseAddress = 0x0;
@@ -590,13 +716,12 @@ void MPU_Config(void)
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
 }
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -610,12 +735,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

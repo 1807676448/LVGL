@@ -24,6 +24,19 @@
 #define MQTT_TOPIC_STATUS_INDEX 1
 #define MQTT_TOPIC_COMMAND_INDEX 2
 #define MQTT_TOPIC_DOWN_INDEX 0
+
+// dshelp AI分析结果结构体
+typedef struct {
+    char analysis[1024];   // AI 分析文本（UTF-8，预留足够空间）
+    bool ok;               // 分析是否成功
+    int sample_count;      // 参与分析的数据条数
+    bool has_new_data;     // 有新数据待 UI 读取（UI 读取后清零）
+    uint64_t recv_timestamp; // 服务器返回的时间戳
+} dshelp_result_t;
+
+extern dshelp_result_t g_dshelp_result;
+extern bool g_time_synced;
+
 //外部变量引用区
 extern volatile uint8_t uart1_rx_buf[500]; // 接收缓冲区
 extern volatile int16_t uart1_ins;
@@ -56,6 +69,7 @@ void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart);
 void MQTT_Subscribe_Downlink(UART_HandleTypeDef *huart);
 void MQTT_Request_Time(UART_HandleTypeDef *huart);
 void MQTT_Report_Status(UART_HandleTypeDef *huart, const char *status, uint32_t runtime_seconds);
+void MQTT_Send_DsHelp(UART_HandleTypeDef *huart);
 int N_My_JsonQuery(char *key);
 void TimeChange(void);
 

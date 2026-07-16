@@ -7,9 +7,9 @@
 /* ===== 数据显示范围宏定义 ===== */
 // 水质相关参数
 #define TDS_MIN 0
-#define TDS_MAX 1000
+#define TDS_MAX 2000
 #define COD_MIN 0
-#define COD_MAX 20
+#define COD_MAX 100
 #define UV254_MIN 0
 #define UV254_MAX 10
 #define PH_MIN 0
@@ -374,7 +374,7 @@ void create_main_screen(void)
 
     // --- 在左侧容器中创建按钮 ---
     lv_obj_t *buttons[4];                                                      // 按钮对象数组
-    const char *button_labels[] = {"水质数据", "设备开关", "遥杆", "About"}; // 按钮标签
+    const char *button_labels[] = {"水质数据", "设备开关", "遥杆", "AI分析"}; // 按钮标签
 
     for (int i = 0; i < 4; i++)
     {
@@ -1230,69 +1230,298 @@ static const char *CREATION_TIME = "2025年10月27日";                 // 创�
  *
  * 此函数构建屏幕4的UI，展示关于项目的信息。
  */
-void create_screen_4(void)
+// ===== Screen 4 静态对象指针 =====
+static lv_obj_t *s4_analysis_label = NULL;   // AI 分析文本标签
+static lv_obj_t *s4_sample_label = NULL;     // 样本数标签
+static lv_obj_t *s4_status_label = NULL;     // 状态图标标签（✅/❌/⏳）
+static lv_obj_t *s4_time_label = NULL;       // 响应时间标签
+static lv_obj_t *s4_request_btn = NULL;      // 请求分析按钮
+static bool s4_waiting_response = false;     // 是否正在等待响应
+static uint8_t s4_wait_seconds = 0;          // 等待响应秒数计数器
+static bool s4_first_time_sync_done = false; // 首次时间同步后自动请求标记
+
+/* 前向声明 */
+static void s4_trigger_dshelp(void);
+
+/**
+ * @brief "请求AI分析" 按钮点击事件回调
+ */
+static void s4_dshelp_btn_event_handler(lv_event_t *e)
 {
-    // 创建屏幕对象
-    screen_4 = lv_obj_create(NULL);
-    ui_apply_screen_style(screen_4);
-    // lv_obj_set_size(screen_4, 480, 320); // 可选：显式设置屏幕大小（如果需要）
-
-    // --- 标题标签 ---
-    lv_obj_t *title = lv_label_create(screen_4);
-    lv_label_set_text(title, "关于");
-    ui_apply_title_style(title);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);              // 将标题对齐到顶部中央
-
-    // --- 信息容器 ---
-    // 创建一个容器来容纳信息标签，以便更好地控制布局
-    lv_obj_t *info_container = lv_obj_create(screen_4);
-    lv_obj_add_style(info_container, &style_card, LV_PART_MAIN);
-    // 设置容器大小：宽度为90%，高度为60%
-    lv_obj_set_size(info_container, LV_PCT(90), LV_PCT(60));
-    lv_obj_set_style_pad_all(info_container, 15, 0);           // 在容器内添加填充
-    lv_obj_set_flex_flow(info_container, LV_FLEX_FLOW_COLUMN); // 将子元素垂直排列
-    // 设置子元素对齐方式
-    lv_obj_set_flex_align(info_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(info_container, LV_ALIGN_CENTER, 0, 0);       // 将容器居中放置在屏幕上
-
-    // --- 项目名称标签 ---
-    lv_obj_t *project_name_label = lv_label_create(info_container);
-    // 使用格式化字符串设置项目名称
-    lv_label_set_text_fmt(project_name_label, "设备名称: %s", PROJECT_NAME);
-    lv_obj_set_style_text_font(project_name_label, LV_FONT_DEFAULT, 0); // 设置字体
-
-    // --- 作者标签 ---
-    lv_obj_t *authors_label = lv_label_create(info_container);
-    // 动态构建作者字符串
-    static char authors_text[150];  // 静态缓冲区，用于存放连接后的作者字符串
-    authors_text[0] = '\0';         // 初始化为空字符串
-    strcat(authors_text, "成员: "); // 添加前缀
-    for (int i = 0; i < NUM_AUTHORS; ++i)
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED)
     {
-        strcat(authors_text, AUTHORS[i]); // 添加作者名
-        if (i < NUM_AUTHORS - 1)
+        // 防止重复触发
+        if (s4_waiting_response) return;
+
+        s4_trigger_dshelp();
+    }
+}
+
+/**
+ * @brief 对分析文本进行分行处理，在【标记前插入换行符
+ * @param dst 输出缓冲区
+ * @param dst_size 输出缓冲区大小
+ * @param src 原始分析文本
+ * @note 每个【章节】独占一行，方便 LVGL 标签显示
+ */
+static void format_analysis_text(char *dst, size_t dst_size, const char *src)
+{
+    if (!dst || !src || dst_size == 0) return;
+    size_t di = 0;
+    size_t si = 0;
+    while (src[si] != '\0' && di < dst_size - 1)
+    {
+        /* 在非行首的 "【" 前插入换行符 */
+        if (src[si] == '\xE3' && src[si + 1] == '\x80' && src[si + 2] == '\x90')
         {
-            strcat(authors_text, ", "); // 添加逗号分隔符
+            if (di > 0 && dst[di - 1] != '\n')
+            {
+                dst[di++] = '\n';
+                if (di >= dst_size - 1) break;
+            }
+            dst[di++] = src[si++];
+            dst[di++] = src[si++];
+            dst[di++] = src[si++];
+        }
+        else
+        {
+            dst[di++] = src[si++];
         }
     }
-    lv_label_set_text(authors_label, authors_text);                    // 设置标签文本
-    lv_obj_set_style_text_font(authors_label, LV_FONT_DEFAULT, 0); // 设置字体
+    dst[di] = '\0';
+}
 
-    // --- 创建时间标签 ---
-    lv_obj_t *time_label = lv_label_create(info_container);
-    // 使用格式化字符串设置创建时间
-    lv_label_set_text_fmt(time_label, "创建时间: %s", CREATION_TIME);
-    lv_obj_set_style_text_font(time_label, LV_FONT_DEFAULT, 0); // 设置字体
+/**
+ * @brief 触发一次 dshelp AI 分析请求（共用逻辑）
+ */
+static void s4_trigger_dshelp(void)
+{
+    s4_waiting_response = true;
+    s4_wait_seconds = 0;
 
-    // --- 返回按钮 ---
-    lv_obj_t *back_btn = lv_button_create(screen_4);
+    if (s4_status_label)
+    {
+        lv_label_set_text(s4_status_label, "...");  /* 等待中 */
+    }
+    if (s4_analysis_label)
+    {
+        lv_label_set_text(s4_analysis_label, "正在请求AI分析，请稍候...");
+    }
+    if (s4_sample_label)
+    {
+        lv_label_set_text(s4_sample_label, "样本数: -");
+    }
+    if (s4_request_btn)
+    {
+        lv_obj_add_state(s4_request_btn, LV_STATE_DISABLED);
+    }
+
+    extern UART_HandleTypeDef huart2;
+    MQTT_Send_DsHelp(&huart2);
+}
+
+/**
+ * @brief 更新 Screen 4 的 dshelp 分析结果显示
+ *
+ * 由 LVGL 定时器周期性调用（1秒），检查 g_dshelp_result.has_new_data 标志。
+ * 有新数据时更新界面显示，无数据时仅更新时间。
+ * 同时处理：20秒超时重发、首次时间同步后自动请求。
+ */
+void update_screen4_dshelp(void)
+{
+    if (!screen_4) return;
+
+    /* ── 首次时间同步后自动发起 dshelp 请求 ── */
+    if (!s4_first_time_sync_done && g_time_synced)
+    {
+        s4_first_time_sync_done = true;
+        s4_trigger_dshelp();
+    }
+
+    /* ── 20秒超时未收到响应则重发 ── */
+    if (s4_waiting_response)
+    {
+        s4_wait_seconds++;
+        if (s4_wait_seconds >= 20)
+        {
+            printf("[dshelp] No response in 20s, re-sending request...\r\n");
+            s4_trigger_dshelp();
+            return; /* 重发后本轮不继续处理 */
+        }
+    }
+
+    // 检查是否有新的 dshelp 结果
+    if (g_dshelp_result.has_new_data)
+    {
+        g_dshelp_result.has_new_data = false;
+        s4_waiting_response = false;
+        s4_wait_seconds = 0;
+
+        // 恢复按钮
+        if (s4_request_btn)
+        {
+            lv_obj_remove_state(s4_request_btn, LV_STATE_DISABLED);
+        }
+
+        // 更新分析文本（自动分行处理）
+        if (s4_analysis_label)
+        {
+            if (g_dshelp_result.analysis[0] != '\0')
+            {
+                char formatted[sizeof(g_dshelp_result.analysis) * 2];
+                format_analysis_text(formatted, sizeof(formatted),
+                                     g_dshelp_result.analysis);
+                lv_label_set_text(s4_analysis_label, formatted);
+            }
+            else
+            {
+                lv_label_set_text(s4_analysis_label, "未能获取分析结果。");
+            }
+        }
+
+        // 更新状态图标
+        if (s4_status_label)
+        {
+            if (g_dshelp_result.ok)
+            {
+                lv_label_set_text(s4_status_label, "OK");
+            }
+            else
+            {
+                lv_label_set_text(s4_status_label, "ERR");
+            }
+        }
+
+        // 更新样本数
+        if (s4_sample_label)
+        {
+            lv_label_set_text_fmt(s4_sample_label, "样本数: %d",
+                                  g_dshelp_result.sample_count);
+        }
+    }
+
+    // 更新时间显示（无论是否有新数据）
+    if (s4_time_label)
+    {
+        extern uint64_t UNX_Now_Time;
+        if (UNX_Now_Time > 0)
+        {
+            time_t t = (time_t)(UNX_Now_Time / 1000 + 28800); // UTC+8
+            struct tm *lt = localtime(&t);
+            char time_str[10];
+            strftime(time_str, sizeof(time_str), "%H:%M:%S", lt);
+            lv_label_set_text(s4_time_label, time_str);
+        }
+    }
+}
+
+/**
+ * @brief 创建 Screen 4 —— AI 水质分析界面
+ *
+ * 布局（480×320）：
+ *   ┌─────────────────────────────┐
+ *   │     💧 AI 水质分析          │  ← 标题行
+ *   ├─────────────────────────────┤
+ *   │  【水质概况】整体良好。      │
+ *   │  【关键指标】pH7.2,TDS123   │  ← 分析文本区域（可滚动）
+ *   │     COD45,水温22.5℃。      │
+ *   │  【建议】继续日常监测即可。  │
+ *   ├─────────────────────────────┤
+ *   │ 样本数:5  │  ✅  │ 16:05   │  ← 底栏信息
+ *   ├─────────────────────────────┤
+ *   │ [ 请求AI分析 ]   [ 返回 ]   │  ← 按钮行
+ *   └─────────────────────────────┘
+ */
+void create_screen_4(void)
+{
+    screen_4 = lv_obj_create(NULL);
+    ui_apply_screen_style(screen_4);
+
+    // ========== 标题 ==========
+    lv_obj_t *title = lv_label_create(screen_4);
+    lv_label_set_text(title, "AI \xE6\xB0\xB4\xE8\xB4\xA8\xE5\x88\x86\xE6\x9E\x90"); // "AI 水质分析"
+    ui_apply_title_style(title);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+    // ========== 分析文本卡片容器 ==========
+    lv_obj_t *analysis_card = lv_obj_create(screen_4);
+    lv_obj_add_style(analysis_card, &style_card, LV_PART_MAIN);
+    lv_obj_set_size(analysis_card, LV_PCT(92), LV_VER_RES - 160);
+    lv_obj_align_to(analysis_card, title, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+    lv_obj_set_style_pad_all(analysis_card, 12, 0);
+
+    // 分析文本标签（支持自动换行和滚动）
+    s4_analysis_label = lv_label_create(analysis_card);
+    lv_label_set_text(s4_analysis_label, "点击下方按钮请求AI水质分析");
+    lv_label_set_long_mode(s4_analysis_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s4_analysis_label, LV_PCT(100));
+    lv_obj_set_style_text_font(s4_analysis_label, LV_FONT_DEFAULT, 0);
+    lv_obj_set_style_text_color(s4_analysis_label,
+                                lv_palette_darken(LV_PALETTE_BLUE, 4), 0);
+
+    // ========== 底栏信息行 ==========
+    lv_obj_t *footer_cont = lv_obj_create(screen_4);
+    lv_obj_set_size(footer_cont, LV_PCT(92), 32);
+    lv_obj_align_to(footer_cont, analysis_card, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
+    lv_obj_set_flex_flow(footer_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(footer_cont, LV_FLEX_ALIGN_SPACE_EVENLY,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_border_width(footer_cont, 0, 0);
+    lv_obj_set_style_bg_opa(footer_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(footer_cont, 0, 0);
+    lv_obj_clear_flag(footer_cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    // 样本数标签
+    s4_sample_label = lv_label_create(footer_cont);
+    lv_label_set_text(s4_sample_label, "样本数: -");
+    lv_obj_set_style_text_font(s4_sample_label, LV_FONT_DEFAULT, 0);
+
+    // 状态图标标签
+    s4_status_label = lv_label_create(footer_cont);
+    lv_label_set_text(s4_status_label, "-");
+    lv_obj_set_style_text_font(s4_status_label, LV_FONT_DEFAULT, 0);
+
+    // 时间标签
+    s4_time_label = lv_label_create(footer_cont);
+    lv_label_set_text(s4_time_label, "--:--:--");
+    lv_obj_set_style_text_font(s4_time_label, LV_FONT_DEFAULT, 0);
+
+    // ========== 按钮行 ==========
+    lv_obj_t *btn_cont = lv_obj_create(screen_4);
+    lv_obj_set_size(btn_cont, LV_PCT(92), 44);
+    lv_obj_align_to(btn_cont, footer_cont, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+    lv_obj_set_flex_flow(btn_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_cont, LV_FLEX_ALIGN_SPACE_EVENLY,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_border_width(btn_cont, 0, 0);
+    lv_obj_set_style_bg_opa(btn_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(btn_cont, 0, 0);
+    lv_obj_clear_flag(btn_cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    // "请求AI分析" 按钮
+    s4_request_btn = lv_button_create(btn_cont);
+    ui_apply_button_style(s4_request_btn);
+    lv_obj_set_size(s4_request_btn, 140, 38);
+    lv_obj_t *req_label = lv_label_create(s4_request_btn);
+    lv_label_set_text(req_label, "\xE8\xAF\xB7\xE6\xB1\x82"
+                      "AI\xE5\x88\x86\xE6\x9E\x90"); // "请求AI分析"
+    lv_obj_center(req_label);
+    lv_obj_add_event_cb(s4_request_btn, s4_dshelp_btn_event_handler,
+                        LV_EVENT_CLICKED, NULL);
+
+    // "返回" 按钮
+    lv_obj_t *back_btn = lv_button_create(btn_cont);
     ui_apply_button_style(back_btn);
-    lv_obj_set_style_pad_hor(back_btn, 20, 0);           // 为按钮添加水平内边距
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20); // 将按钮对齐到底部中央
+    lv_obj_set_size(back_btn, 120, 38);
     lv_obj_t *back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "返回");
-    lv_obj_center(back_label);                                                         // 将标签居中放置在按钮内
-    lv_obj_add_event_cb(back_btn, back_to_main_event_handler, LV_EVENT_CLICKED, NULL); // 添加点击事件回调
+    lv_label_set_text(back_label, "\xE8\xBF\x94\xE5\x9B\x9E"); // "返回"
+    lv_obj_center(back_label);
+    lv_obj_add_event_cb(back_btn, back_to_main_event_handler,
+                        LV_EVENT_CLICKED, NULL);
+
+    // ========== 启动定时刷新（1 秒周期）==========
+    lv_timer_create((lv_timer_cb_t)update_screen4_dshelp, 1000, NULL);
 }
 
 // 主菜单按钮的事件处理函数

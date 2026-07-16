@@ -644,10 +644,10 @@
  *  #define LV_FONT_CUSTOM_DECLARE   LV_FONT_DECLARE(my_font_1) LV_FONT_DECLARE(my_font_2)
  *  @endcode
  */
-#define LV_FONT_CUSTOM_DECLARE LV_FONT_DECLARE(lv_font_weiruan_16)
+#define LV_FONT_CUSTOM_DECLARE LV_FONT_DECLARE(lv_font_weiruan_16) LV_FONT_DECLARE(lv_font_hanzi_16)
 
 /** Always set a default font */
-#define LV_FONT_DEFAULT &lv_font_weiruan_16
+#define LV_FONT_DEFAULT &lv_font_hanzi_16  /* Flash字库诊断模式 */
 
 /** Enable handling large font and/or fonts with a lot of characters.
  *  The limit depends on the font size, font face and bpp.

@@ -46,7 +46,7 @@ static int parse_device_id_number(const cJSON *id)
 }
 
 /** 全局时间同步标志，表示是否已从服务器获取到有效时间戳 */
-static bool g_time_synced = false;
+bool g_time_synced = false;
 
 /**
  * @brief 重置指定UART的接收状态，清空接收缓冲区并重新启动单字节接收。
@@ -159,6 +159,15 @@ device_status_t device_list[Device_Max] = {
 config_item_t config_items[MAX_CONFIG_ITEMS] = {0};
 uint8_t config_count = 0;                // 当前已存储的配置项数量
 extern uint64_t UNX_Now_Time;             // 当前时间戳（毫秒级Unix时间戳）
+
+// dshelp AI 分析结果全局变量（供 UI 层读取）
+dshelp_result_t g_dshelp_result = {
+    .analysis = "",
+    .ok = false,
+    .sample_count = 0,
+    .has_new_data = false,
+    .recv_timestamp = 0
+};
 
 /*------<基础解析函数>------*/
 /**
@@ -332,6 +341,47 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
     cJSON *root = cJSON_Parse(json_buf);
     if (root != NULL)
     {
+        // ── dshelp AI 分析响应处理（优先判断，避免与传感器数据混淆）──
+        cJSON *msg_type = cJSON_GetObjectItem(root, "type");
+        if (msg_type && cJSON_IsString(msg_type) && strcmp(msg_type->valuestring, "dshelp") == 0)
+        {
+            cJSON *analysis = cJSON_GetObjectItem(root, "analysis");
+            cJSON *ok       = cJSON_GetObjectItem(root, "ok");
+            cJSON *sc       = cJSON_GetObjectItem(root, "sample_count");
+            cJSON *ts       = cJSON_GetObjectItem(root, "timestamp");
+
+            // 存储分析文本
+            if (analysis && cJSON_IsString(analysis) && analysis->valuestring)
+            {
+                strncpy(g_dshelp_result.analysis, analysis->valuestring,
+                        sizeof(g_dshelp_result.analysis) - 1);
+                g_dshelp_result.analysis[sizeof(g_dshelp_result.analysis) - 1] = '\0';
+            }
+            else
+            {
+                g_dshelp_result.analysis[0] = '\0';
+            }
+
+            g_dshelp_result.ok = (ok && cJSON_IsTrue(ok));
+            g_dshelp_result.sample_count = (sc && cJSON_IsNumber(sc)) ? sc->valueint : 0;
+            g_dshelp_result.recv_timestamp = (ts && cJSON_IsNumber(ts))
+                ? (uint64_t)llround(cJSON_GetNumberValue(ts)) : 0;
+            g_dshelp_result.has_new_data = true;
+
+            // 调试输出 + 转发到 USART1
+            printf("[dshelp] ===== AI Analysis Result =====\r\n");
+            printf("[dshelp] ok: %s\r\n", g_dshelp_result.ok ? "true" : "false");
+            printf("[dshelp] sample_count: %d\r\n", g_dshelp_result.sample_count);
+            printf("[dshelp] analysis: %s\r\n", g_dshelp_result.analysis);
+            printf("[dshelp] timestamp: %llu\r\n",
+                   (unsigned long long)g_dshelp_result.recv_timestamp);
+            printf("[dshelp] =============================\r\n");
+
+            cJSON_Delete(root);
+            reset_uart_rx(usart);
+            return;
+        }
+
         // 提取设备ID和状态，更新设备列表
         cJSON *id = cJSON_GetObjectItem(root, "device_id");
         cJSON *status = cJSON_GetObjectItem(root, "status");
@@ -577,6 +627,24 @@ void MQTT_Report_Status(UART_HandleTypeDef *huart, const char *status, uint32_t 
     snprintf(cmd, sizeof(cmd),
              "MQPUB,0,%d,{\"device_id\":\"%s\",\"status\":\"%s\",\"runtime_seconds\":%lu}",
              MQTT_TOPIC_STATUS_INDEX, MQTT_DEVICE_ID, status, (unsigned long)runtime_seconds);
+    Send_JSON(cmd, huart);
+}
+
+/**
+ * @brief 发送 dshelp 命令请求 AI 水质分析。
+ * @param huart 连接 4G/WiFi 模块的 UART 句柄（本项目为 &huart2）
+ * @note AT 指令格式：MQPUB,0,2,{"device_id":"device_002","command":"dshelp"}
+ */
+void MQTT_Send_DsHelp(UART_HandleTypeDef *huart)
+{
+    if (huart == NULL) return;
+
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd),
+             "MQPUB,0,%d,{\"device_id\":\"%s\",\"command\":\"dshelp\"}",
+             MQTT_TOPIC_COMMAND_INDEX, MQTT_DEVICE_ID);
+
+    printf("[dshelp] Sending AI analysis request...\r\n");
     Send_JSON(cmd, huart);
 }
 
