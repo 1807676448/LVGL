@@ -490,7 +490,7 @@ int update_screen1_item(const char *name, double value)
 
     if (config_idx == -1)
     {
-        printf("[LVGL] update_screen1_item: name '%s' not found in config!\r\n", name ? name : "(null)");
+        // printf("[LVGL] update_screen1_item: name '%s' not found in config!\r\n", name ? name : "(null)");
         return 1; // 未找到配置
     }
 
@@ -516,7 +516,7 @@ int update_screen1_item(const char *name, double value)
                 snprintf(buf, sizeof(buf), item_configs[config_idx].display_format, value);
                 lv_label_set_text(screen1_items[i].value_label, buf);
             }
-            printf("[LVGL] update_screen1_item: '%s' = %.2f OK\r\n", name, value);
+            // printf("[LVGL] update_screen1_item: '%s' = %.2f OK\r\n", name, value);  /* 调试：每次更新都打印，太冗余 */
             return 0;
         }
     }
@@ -1239,6 +1239,10 @@ static lv_obj_t *s4_request_btn = NULL;      // 请求分析按钮
 static bool s4_waiting_response = false;     // 是否正在等待响应
 static uint8_t s4_wait_seconds = 0;          // 等待响应秒数计数器
 static bool s4_first_time_sync_done = false; // 首次时间同步后自动请求标记
+static uint8_t s4_force_clear_retry_cnt = 0; // UART2 强制清空后的重试计数
+
+/* 外部引用：UART2 强制清空标志（My_Data_New.c） */
+extern bool g_uart2_force_cleared_for_dshelp;
 
 /* 前向声明 */
 static void s4_trigger_dshelp(void);
@@ -1254,6 +1258,7 @@ static void s4_dshelp_btn_event_handler(lv_event_t *e)
         // 防止重复触发
         if (s4_waiting_response) return;
 
+        s4_force_clear_retry_cnt = 0;   // 手动请求，重置重试计数
         s4_trigger_dshelp();
     }
 }
@@ -1326,7 +1331,7 @@ static void s4_trigger_dshelp(void)
  *
  * 由 LVGL 定时器周期性调用（1秒），检查 g_dshelp_result.has_new_data 标志。
  * 有新数据时更新界面显示，无数据时仅更新时间。
- * 同时处理：20秒超时重发、首次时间同步后自动请求。
+ * 同时处理：5秒超时重发、首次时间同步后自动请求。
  */
 void update_screen4_dshelp(void)
 {
@@ -1336,16 +1341,31 @@ void update_screen4_dshelp(void)
     if (!s4_first_time_sync_done && g_time_synced)
     {
         s4_first_time_sync_done = true;
+        s4_force_clear_retry_cnt = 0;   // 首次自动请求，重置重试计数
         s4_trigger_dshelp();
     }
 
-    /* ── 20秒超时未收到响应则重发 ── */
+    /* ── UART2 缓冲区被强制清空时，触发一次 dshelp 重试 ── */
+    if (s4_waiting_response && g_uart2_force_cleared_for_dshelp)
+    {
+        g_uart2_force_cleared_for_dshelp = false;
+        if (s4_force_clear_retry_cnt < 1)
+        {
+            s4_force_clear_retry_cnt++;
+            printf("[dshelp] UART2 force-cleared during wait, re-sending (retry %d)...\r\n",
+                   s4_force_clear_retry_cnt);
+            s4_trigger_dshelp();
+            return;
+        }
+    }
+
+    /* ── 5秒超时未收到响应则重发 ── */
     if (s4_waiting_response)
     {
         s4_wait_seconds++;
-        if (s4_wait_seconds >= 20)
+        if (s4_wait_seconds >= 5)
         {
-            printf("[dshelp] No response in 20s, re-sending request...\r\n");
+            printf("[dshelp] No response in 5s, re-sending request...\r\n");
             s4_trigger_dshelp();
             return; /* 重发后本轮不继续处理 */
         }
@@ -1357,6 +1377,7 @@ void update_screen4_dshelp(void)
         g_dshelp_result.has_new_data = false;
         s4_waiting_response = false;
         s4_wait_seconds = 0;
+        s4_force_clear_retry_cnt = 0;   // 成功收到响应，重置强制清空重试计数
 
         // 恢复按钮
         if (s4_request_btn)

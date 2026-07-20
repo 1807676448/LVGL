@@ -48,6 +48,9 @@ static int parse_device_id_number(const cJSON *id)
 /** 全局时间同步标志，表示是否已从服务器获取到有效时间戳 */
 bool g_time_synced = false;
 
+/** UART2 因解析失败被强制清空缓冲区的标志，供 dshelp 重试逻辑使用 */
+bool g_uart2_force_cleared_for_dshelp = false;
+
 /**
  * @brief 重置指定UART的接收状态，清空接收缓冲区并重新启动单字节接收。
  * @param usart 指向UART句柄的指针，支持huart1、huart2、huart3。
@@ -212,7 +215,7 @@ void N_My_JsonChange_Int(char *key, int num)
         // 新增项，检查容量
         if (config_count >= MAX_CONFIG_ITEMS)
         {
-            printf("error:config_items FULL");
+            printf("[CONFIG] error: config_items FULL\r\n");
             return;
         }
         // 安全复制键名
@@ -223,7 +226,7 @@ void N_My_JsonChange_Int(char *key, int num)
         config_items[config_count].type = 1; // 1表示数字类型（但未使用）
 
         config_count++; // 增加计数
-        printf("---------%d\r\n", config_count);
+        // printf("---------%d\r\n", config_count);  /* 调试：配置项计数 */
     }
 }
 
@@ -252,7 +255,7 @@ void N_My_JsonChange_Double(char *key, double num)
         // 新增项，检查容量
         if (config_count >= MAX_CONFIG_ITEMS)
         {
-            printf("error:config_items FULL");
+            printf("[CONFIG] error: config_items FULL\r\n");
             return;
         }
 
@@ -263,7 +266,7 @@ void N_My_JsonChange_Double(char *key, double num)
         config_items[config_count].type = 1;
 
         config_count++;
-        printf("---------%d\r\n", config_count);
+        // printf("---------%d\r\n", config_count);  /* 调试：配置项计数 */
     }
 }
 
@@ -313,9 +316,14 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
             (*fail_cnt)++;
             if (*fail_cnt >= 30)
             {
-                printf("UART%d parse fail %d times, force clear buffer\r\n",
+                printf("[JSON] UART%d parse fail %d, force clear\r\n",
                        (usart == &huart1) ? 1 : (usart == &huart2) ? 2 : 3, *fail_cnt);
                 *fail_cnt = 0;
+                /* UART2 强制清空时通知 dshelp 模块需要重试 */
+                if (usart == &huart2)
+                {
+                    g_uart2_force_cleared_for_dshelp = true;
+                }
                 reset_uart_rx(usart);
             }
         }
@@ -336,7 +344,9 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
     memcpy(json_buf, Json_start, json_len);
     json_buf[json_len] = '\0';
 
-    printf("Json_start:%s\n\r", json_buf);
+    /* 展示接收到的原始JSON数据，标记来源UART */
+    printf("[JSON] UART%d RX: %s\r\n",
+           (usart == &huart1) ? 1 : (usart == &huart2) ? 2 : 3, json_buf);
     // 解析JSON
     cJSON *root = cJSON_Parse(json_buf);
     if (root != NULL)
@@ -435,7 +445,7 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
             {
                 UNX_Now_Time = ts;
                 g_time_synced = true;
-                printf("Received timestamp(ms): %llu\r\n", (unsigned long long)ts);
+                printf("[TIME] Received timestamp(ms): %llu\r\n", (unsigned long long)ts);
             }
         }
 
@@ -453,7 +463,7 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
             {
                 double num = cJSON_GetNumberValue(item);
                 int64_t num_int = (int64_t)llround(num);
-                printf("%s : %lld (%.3f)\r\n", key, (long long)num_int, num);
+                // printf("%s : %lld (%.3f)\r\n", key, (long long)num_int, num);  /* 调试：逐键值dump */
                 // 判断数值是否为整数（与四舍五入后的整数相等）
                 if (num == (double)num_int)
                 {
@@ -470,7 +480,7 @@ void N_My_JsonGet(char *Json_Data, UART_HandleTypeDef *usart)
     }
     else
     {
-        printf("Error In Json Parse(N_My_JsonGet_1)\n\r");
+        printf("[JSON] Error: JSON parse failed\r\n");
         reset_uart_rx(usart);
         return;
     }
@@ -496,9 +506,10 @@ void Send_JSON(const char *json_str, UART_HandleTypeDef *huart)
     HAL_UART_Transmit(huart, (uint8_t *)json_str, len, HAL_MAX_DELAY);
     HAL_UART_Transmit(huart, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
 
-    // 镜像到USART1便于调试观察4G收发指令
+    // 镜像到USART1便于调试观察4G收发指令（加"4G"前缀区分）
     if (huart != &huart1)
     {
+        HAL_UART_Transmit(&huart1, (uint8_t *)"[4G]: ", 4, HAL_MAX_DELAY);
         HAL_UART_Transmit(&huart1, (uint8_t *)json_str, len, HAL_MAX_DELAY);
         HAL_UART_Transmit(&huart1, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
     }
@@ -520,7 +531,7 @@ void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart)
     cJSON *root = cJSON_CreateObject();
     if (!root)
     {
-        printf("Create JSON object failed\r\n");
+        printf("[JSON] Error: Create JSON object failed\r\n");
         return;
     }
 
@@ -573,7 +584,7 @@ void Send_JSON_KeyValue(const char **key, int num, UART_HandleTypeDef *huart)
         }
         else
         {
-            printf("Memory allocation failed\r\n");
+            printf("[JSON] Error: Memory allocation failed\r\n");
         }
         free(json_str);
     }

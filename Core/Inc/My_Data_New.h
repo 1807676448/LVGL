@@ -36,13 +36,14 @@ typedef struct {
 
 extern dshelp_result_t g_dshelp_result;
 extern bool g_time_synced;
+extern bool g_uart2_force_cleared_for_dshelp;
 
 //外部变量引用区
-extern volatile uint8_t uart1_rx_buf[500]; // 接收缓冲区
+extern volatile uint8_t uart1_rx_buf[512]; // 接收缓冲区（32B Cache Line 对齐）
 extern volatile int16_t uart1_ins;
-extern volatile uint8_t uart2_rx_buf[500]; // 接收缓冲区
+extern volatile uint8_t uart2_rx_buf[512]; // 接收缓冲区（32B Cache Line 对齐）
 extern volatile int16_t uart2_ins;
-extern volatile uint8_t uart3_rx_buf[500]; // 接收缓冲区
+extern volatile uint8_t uart3_rx_buf[512]; // 接收缓冲区（32B Cache Line 对齐）
 extern volatile int16_t uart3_ins;
 
 // 配置设备结构体（存储设备状态）

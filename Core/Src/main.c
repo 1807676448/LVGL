@@ -70,7 +70,7 @@ static void My_TimerTask_Handler(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 #define AXI_SRAM_VAR __attribute__((section(".axi_sram"))) // buf内存位置优化,似乎没用
-#define SendData_Time 3000                                 // 每30s发送一次水质数据
+#define SendData_Time 10000                                 // 每30s发送一次水质数据
 #define StatusReport_Time 5000                             // 每60s发送一次在线状态
 
 AXI_SRAM_VAR static uint8_t buf1[OneStepSize * OnePointSize_Lvgl] = {1}; // 第一帧缓冲区
@@ -80,11 +80,11 @@ void my_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map);
 
 /* ===== UART 接收缓冲区：必须 32 字节对齐（STM32H7 D-Cache Line = 32B）===== */
 /* 不对齐会导致 SCB_InvalidateDCache 覆盖相邻变量的 Cache Line，造成数据随机损坏 */
-__attribute__((aligned(32))) volatile uint8_t uart1_rx_buf[500];
+__attribute__((aligned(32))) volatile uint8_t uart1_rx_buf[512];
 volatile int16_t uart1_ins;
-__attribute__((aligned(32))) volatile uint8_t uart2_rx_buf[500];
+__attribute__((aligned(32))) volatile uint8_t uart2_rx_buf[512];
 volatile int16_t uart2_ins;
-__attribute__((aligned(32))) volatile uint8_t uart3_rx_buf[500];
+__attribute__((aligned(32))) volatile uint8_t uart3_rx_buf[512];
 volatile int16_t uart3_ins;
 /* USART3 RX DMA 累积接收标志：ISR 置位，主循环处理 */
 static volatile bool uart3_rx_updated = false;
@@ -458,7 +458,7 @@ static void USART3_Test_Task(void)
   uint8_t left = 0U;
   uint8_t right = 0U;
 
-  if ((HAL_GetTick() - last_tick) < 250)
+  if ((HAL_GetTick() - last_tick) < 150)
   {
     return;
   }
@@ -472,7 +472,7 @@ static void USART3_Test_Task(void)
   }
 
   joystick_get_state(&state);
-
+//限幅部分
   if (state.active)
   {
     if (state.y_percent > 0)
@@ -497,10 +497,10 @@ static void USART3_Test_Task(void)
   }
 
   /* 遥杆指令无变化则跳过发送，为共享 USART3 的其他设备让出带宽 */
-  if (up == last_up && down == last_down && left == last_left && right == last_right)
-  {
-    return;
-  }
+  // if (up == last_up && down == last_down && left == last_left && right == last_right)
+  // {
+  //   return;
+  // }
 
   /* CPU 写入发送缓冲区 */
   joystick_tx_buf[0] = 0xAAU;
@@ -570,13 +570,13 @@ static void My_TimerTask_Handler(void)
   if (flag_send_water_data)
   {
     flag_send_water_data = false;
-    printf("Send water quality data\r\n");
+    printf("[SENSOR] Send water quality data\r\n");
     Send_JSON_KeyValue(keys, 10, &huart2);
   }
   if (flag_request_time)
   {
     flag_request_time = false;
-    printf("Request time stamp\r\n\r\n");
+    printf("[TIME] Request time stamp\r\n");
     MQTT_Request_Time(&huart2);
   }
   if (flag_report_status)
